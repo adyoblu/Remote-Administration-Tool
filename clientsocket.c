@@ -6,6 +6,38 @@
 #include <sys/socket.h>
 #define buffersize 1024
 
+void sendFile(int sock, const char *filename) {
+    FILE *file = fopen(filename, "rb");
+    if (file == NULL) {
+        perror("Eroare la deschiderea fisierului");
+        return;
+    }
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    send(sock, &fileSize, sizeof(size_t), 0);
+
+    char buffer[buffersize];
+    size_t bytesRead;
+    while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        send(sock, buffer, bytesRead, 0);
+    }
+
+    fclose(file);
+} 
+
+void selectFile(int sock)
+{
+    char filename[buffersize];
+    ssize_t bytesRead = recv(sock, filename, sizeof(filename), 0);
+    if (bytesRead <= 0) {
+        perror("Eroare la primirea numelui fișierului");
+        return;
+    }
+    sendFile(sock, filename);
+}
+
 void sendMessage(int sock)
 {
     char message[buffersize];
@@ -119,6 +151,47 @@ void restartClient(int sock) {
     }
 }
 
+void receiveFile(int sock) {
+    // Primește numele fișierului
+    char filename[buffersize];
+    ssize_t bytesRead = recv(sock, filename, sizeof(filename), 0);
+    if (bytesRead <= 0) {
+        perror("Eroare la primirea numelui fisierului");
+        return;
+    }
+
+    // Primește dimensiunea fișierului
+    size_t fileSize;
+    recv(sock, &fileSize, sizeof(size_t), 0);
+
+    // Deschide fișierul pentru scriere
+    FILE *file = fopen(filename, "wb");
+    if (file == NULL) {
+        perror("Eroare la deschiderea fisierului pentru scriere");
+        return;
+    }
+
+    // Primește conținutul fișierului și scrie-l în fișier
+    char buffer[buffersize];
+    size_t totalBytesReceived = 0;
+
+    while (totalBytesReceived < fileSize) {
+        bytesRead = recv(sock, buffer, sizeof(buffer), 0);
+        if (bytesRead <= 0) {
+            perror("Eroare la primirea datelor fisierului");
+            fclose(file);
+            return;
+        }
+
+        fwrite(buffer, 1, bytesRead, file);
+        totalBytesReceived += bytesRead;
+    }
+
+    fclose(file);
+    printf("Fisierul '%s' a fost primit si salvat cu succes.\n", filename);
+}
+
+
 void handleServerActions(int sock) {
     while (1) {
         char response[buffersize];
@@ -138,6 +211,12 @@ void handleServerActions(int sock) {
                 break;
             case 4:
                 restartClient(sock);
+                break;
+            case 5:
+                selectFile(sock);
+                break;
+            case 6:
+                receiveFile(sock);
                 break;
             default:
                 printf("S-a terminat legatura cu administratorul.\n");
