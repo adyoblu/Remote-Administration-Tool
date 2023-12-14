@@ -8,7 +8,6 @@
 #include <sys/wait.h>
 
 #define buffersize 1024
-//eu
 
 typedef struct {
     char ip[INET_ADDRSTRLEN];
@@ -140,6 +139,76 @@ void Whitelist(){
     }
 }
 
+void sendFilenameAndFile(int clientSock, const char *filename,const char* name) {
+    if (send(clientSock, "5", buffersize, 0) == -1) {
+        perror("Eroare la trimiterea opțiunii '5'");
+        exit(EXIT_FAILURE);
+    }
+    // Trimite numele fisierului la client
+    send(clientSock, filename, strlen(filename), 0);
+
+    // Deschide fișierul pentru scriere binara
+    FILE *file = fopen(name, "wb");
+    if (file == NULL) {
+        perror("Eroare la deschiderea fisierului pentru scriere");
+        return;
+    }
+
+    // Primeste dimensiunea fisierului de la client
+    size_t fileSize;
+    recv(clientSock, &fileSize, sizeof(size_t), 0);
+
+    // Primeste continutul fisierului într-un buffer
+    char buffer[buffersize];
+    size_t bytesReceived = 0;
+
+    while (bytesReceived < fileSize) {
+        ssize_t bytesRead = recv(clientSock, buffer, sizeof(buffer), 0);
+        if (bytesRead <= 0) {
+            perror("Eroare la primirea datelor fisierului");
+            fclose(file);
+            return;
+        }
+
+        // Scrie datele primite în fisier
+        fwrite(buffer, 1, bytesRead, file);
+        bytesReceived += bytesRead;
+    }
+
+    fclose(file);
+    printf("Fisierul '%s' a fost primit si salvat cu succes.\n", filename);
+    asteptare();
+}
+
+void sendFile(int clientSock, const char *filename,const char* name) {
+    if (send(clientSock, "6", buffersize, 0) == -1) {
+        perror("Eroare la trimiterea opțiunii '5'");
+        exit(EXIT_FAILURE);
+    }
+    FILE *file = fopen(filename, "rb");
+    if (file == NULL) {
+        perror("Eroare la deschiderea fisierului");
+        return;
+    }
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    send(clientSock, name, strlen(filename) + 1, 0);
+
+    send(clientSock, &fileSize, sizeof(size_t), 0);
+
+    char buffer[buffersize];
+    size_t bytesRead;
+    while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        send(clientSock, buffer, bytesRead, 0);
+    }
+
+    fclose(file);
+    printf("Fisierul '%s' a fost trimis cu succes.\n", filename);
+    asteptare();
+} 
+
 void print_menu()
 {
     printf("\nMeniu:\n");
@@ -151,9 +220,11 @@ void print_menu()
     printf("5. Afiseaza clientii conectati\n");
     printf("6. Adauga in blacklist\n");
     printf("7. Whitelisting\n");
+    printf("8. Ia un fisier\n");
+    printf("9. Trimite un fisier\n");
     printf("----------------------------------------------------------\n");
 	printf("Introduceti optiunea dorita:");
-}
+}    
 
 int main() {
     struct sigaction sa;
@@ -328,7 +399,24 @@ int main() {
                         case '7':
                             Whitelist();
                             break;
-
+                        case '8':
+                            char buffer[buffersize];
+                            printf("Da calea fisierului:");
+                            scanf("%s",buffer);
+                            char buffer1[buffersize];
+                            printf("Da numele fisierului:");
+                            scanf("%s",buffer1);
+                            sendFilenameAndFile(clnt_sock,buffer,buffer1);
+                            break;
+                        case '9':
+                            char buff[buffersize];
+                            printf("Da calea fisierului:");
+                            scanf("%s",buffer);
+                            char buff1[buffersize];
+                            printf("Da numele fisierului:");
+                            scanf("%s",buffer1);
+                            sendFile(clnt_sock,buffer,buffer1);
+                            break;
                         default:
                             break;
                     }
