@@ -4,24 +4,55 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
-#define buffersize 1024
+#define BUFFSIZE 4096
+
+void sendFile(int sock, const char *filename) {
+    FILE *file = fopen(filename, "rb");
+    if (file == NULL) {
+        perror("Eroare la deschiderea fisierului");
+        return;
+    }
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    send(sock, &fileSize, sizeof(size_t), 0);
+
+    char buffer[BUFFSIZE];
+    size_t bytesRead;
+    while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        send(sock, buffer, bytesRead, 0);
+    }
+
+    fclose(file);
+} 
+
+void selectFile(int sock)
+{
+    char filename[BUFFSIZE];
+    ssize_t bytesRead = recv(sock, filename, sizeof(filename), 0);
+    if (bytesRead <= 0) {
+        perror("Eroare la primirea numelui fișierului");
+        return;
+    }
+    sendFile(sock, filename);
+}
 
 void sendMessage(int sock)
 {
-    char message[buffersize];
+    char message[BUFFSIZE];
     printf("Introduceti mesajul: ");
     fgets(message, sizeof(message), stdin);
     send(sock, message, strlen(message), 0);
-    //-----------------------------
-    char response[buffersize];
+    char response[BUFFSIZE];
     recv(sock, response, sizeof(response), 0);
     printf("Raspuns de la server: %s\n", response);
 }
 
 void sendHostname(int sock)
 {
-    char message[buffersize];
-    char hostname[buffersize];
+    char message[BUFFSIZE];
+    char hostname[BUFFSIZE];
     if (gethostname(hostname, sizeof(hostname)) == 0) {
         fprintf(stderr, "%s", hostname);
         send(sock, hostname, strlen(hostname), 0);
@@ -66,7 +97,7 @@ void sendProcessList(int sock) {
 void receiveAndExecuteCommand(int sock)
 {   
     //fork exec si redirectare prin pipe-uri
-    char command[buffersize];
+    char command[BUFFSIZE];
     ssize_t bytesRead = recv(sock, command, sizeof(command), 0);
 
     printf("Comanda primita de la server: %s\n", command);
@@ -124,10 +155,50 @@ void restartClient(int sock) {
     }
 }
 
+void receiveFile(int sock) {
+    // Primește numele fișierului
+    char filename[BUFFSIZE];
+    ssize_t bytesRead = recv(sock, filename, sizeof(filename), 0);
+    if (bytesRead <= 0) {
+        perror("Eroare la primirea numelui fisierului");
+        return;
+    }
+
+    // Primește dimensiunea fișierului
+    size_t fileSize;
+    recv(sock, &fileSize, sizeof(size_t), 0);
+
+    // Deschide fișierul pentru scriere
+    FILE *file = fopen(filename, "wb");
+    if (file == NULL) {
+        perror("Eroare la deschiderea fisierului pentru scriere");
+        return;
+    }
+
+    // Primește conținutul fișierului și scrie-l în fișier
+    char buffer[BUFFSIZE];
+    size_t totalBytesReceived = 0;
+
+    while (totalBytesReceived < fileSize) {
+        bytesRead = recv(sock, buffer, sizeof(buffer), 0);
+        if (bytesRead <= 0) {
+            perror("Eroare la primirea datelor fisierului");
+            fclose(file);
+            return;
+        }
+
+        fwrite(buffer, 1, bytesRead, file);
+        totalBytesReceived += bytesRead;
+    }
+
+    fclose(file);
+    printf("Fisierul '%s' a fost primit si salvat cu succes.\n", filename);
+}
+
 void handleServerActions(int sock) {
     int timeout = 10;
     while (1) {
-        char response[buffersize];
+        char response[BUFFSIZE];
         recv(sock, response, sizeof(response), 0);
         //printf("\n%s\n", response);
         int responseType = atoi(response);
@@ -148,6 +219,12 @@ void handleServerActions(int sock) {
             case 5:
                 fprintf(stderr, "S-a terminat executia clientului.");
                 exit(0);
+                break;
+            case 8:
+                selectFile(sock);
+                break;
+            case 9:
+                receiveFile(sock);
                 break;
         }
         timeout--;

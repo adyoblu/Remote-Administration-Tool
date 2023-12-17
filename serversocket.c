@@ -55,6 +55,76 @@ void Hostname(int clnt_sock) {
     asteptare();
 }
 
+void sendFilenameAndFile(int clientSock, const char *filename,const char* name) {
+    if (send(clientSock, "8", BUFSIZE, 0) == -1) {
+        perror("Eroare la trimiterea opțiunii '5'");
+        exit(EXIT_FAILURE);
+    }
+    // Trimite numele fisierului la client
+    send(clientSock, filename, strlen(filename), 0);
+
+    // Deschide fișierul pentru scriere binara
+    FILE *file = fopen(name, "wb");
+    if (file == NULL) {
+        perror("Eroare la deschiderea fisierului pentru scriere");
+        return;
+    }
+
+    // Primeste dimensiunea fisierului de la client
+    size_t fileSize;
+    recv(clientSock, &fileSize, sizeof(size_t), 0);
+
+    // Primeste continutul fisierului într-un buffer
+    char buffer[BUFSIZE];
+    size_t bytesReceived = 0;
+
+    while (bytesReceived < fileSize) {
+        ssize_t bytesRead = recv(clientSock, buffer, sizeof(buffer), 0);
+        if (bytesRead <= 0) {
+            perror("Eroare la primirea datelor fisierului");
+            fclose(file);
+            return;
+        }
+
+        // Scrie datele primite în fisier
+        fwrite(buffer, 1, bytesRead, file);
+        bytesReceived += bytesRead;
+    }
+
+    fclose(file);
+    printf("Fisierul '%s' a fost primit si salvat cu succes.\n", filename);
+    asteptare();
+}
+
+void sendFile(int clientSock, const char *filename,const char* name) {
+    if (send(clientSock, "9", BUFSIZE, 0) == -1) {
+        perror("Eroare la trimiterea opțiunii '5'");
+        exit(EXIT_FAILURE);
+    }
+    FILE *file = fopen(filename, "rb");
+    if (file == NULL) {
+        perror("Eroare la deschiderea fisierului");
+        return;
+    }
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    send(clientSock, name, strlen(filename) + 1, 0);
+
+    send(clientSock, &fileSize, sizeof(size_t), 0);
+
+    char buffer[BUFSIZE];
+    size_t bytesRead;
+    while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        send(clientSock, buffer, bytesRead, 0);
+    }
+
+    fclose(file);
+    printf("Fisierul '%s' a fost trimis cu succes.\n", filename);
+    asteptare();
+} 
+
 void ProcessList(int clnt_sock) {
     send(clnt_sock, "2", BUFSIZE, 0); // trimit 2 ca e a doua opțiune din meniu pt client
     printf("Se asteapta lista de procese ...\n");
@@ -158,11 +228,12 @@ void print_menu()
     printf("1. Afiseaza hostname pentru un pc\n");
     printf("2. Afiseaza lista de procese ale unui utilizator\n");
     printf("3. Executa comanda pentru un utilizator\n");
-    printf("4. Opreste PC-ul unui utilizator\n");
+    printf("4. Reporneste PC-ul unui utilizator\n");
     printf("5. Kick client\n");
     printf("6. Afiseaza toti clientii conectati\n");
-    printf("7. Adauga in blacklist\n");
-    printf("8. Whitelisting\n");
+    printf("7. Blacklist/Whitelist\n");
+    printf("8. Ia un fisier\n");
+    printf("9. Trimite un fisier\n");
     printf("----------------------------------------------------------\n");
 	printf("Introduceti optiunea dorita:\n");
     fflush(stdout);
@@ -340,6 +411,30 @@ void* admin_menu_thread(void* arg) {
                         afisareLista();
                         asteptare();
                         break;
+                    case '7':
+                        //whitelist si blacklist
+                        break;
+                    case '8':
+                        char buffer[BUFSIZE];
+                        printf("Da calea fisierului:");
+                        scanf("%s",buffer);
+                        char buffer1[BUFSIZE];
+                        printf("Da numele fisierului:");
+                        scanf("%s",buffer1);
+                        clt_sck = alegeLista();
+                        sendFilenameAndFile(clt_sck, buffer, buffer1);
+                        break;
+
+                    case '9':
+                        char buff[BUFSIZE];
+                        printf("Da calea fisierului:");
+                        scanf("%s",buffer);
+                        char buff1[BUFSIZE];
+                        printf("Da numele fisierului:");
+                        scanf("%s",buffer1);
+                        clt_sck = alegeLista();
+                        sendFile(clt_sck,buffer,buffer1);
+                        break;
 
                     case '0':
                         printf("Iesire din program.\n");
@@ -350,7 +445,6 @@ void* admin_menu_thread(void* arg) {
                 system("clear");
             }
             if(verifica_clienti() == 0) admin_menu_active = 0;
-            //fprintf(stderr, "%d", verifica_clienti());
         } while (option != 0);
     }
     return NULL;
