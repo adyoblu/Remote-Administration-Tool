@@ -23,7 +23,7 @@ void sendHostname(int sock)
     char message[buffersize];
     char hostname[buffersize];
     if (gethostname(hostname, sizeof(hostname)) == 0) {
-        printf("%s",hostname);
+        fprintf(stderr, "%s", hostname);
         send(sock, hostname, strlen(hostname), 0);
     } else 
         perror("Eroare la obtinerea numarului PC-ului");
@@ -64,7 +64,8 @@ void sendProcessList(int sock) {
 }
 
 void receiveAndExecuteCommand(int sock)
-{
+{   
+    //fork exec si redirectare prin pipe-uri
     char command[buffersize];
     ssize_t bytesRead = recv(sock, command, sizeof(command), 0);
 
@@ -91,6 +92,7 @@ void receiveAndExecuteCommand(int sock)
     long fileSize = ftell(file);
     fseek(file, 0, SEEK_SET);
 
+    //if(fileSize != 0){
     //citesc in buffer
     char *buffer = (char *)malloc(fileSize + 1);
     if (buffer == NULL) {
@@ -109,6 +111,9 @@ void receiveAndExecuteCommand(int sock)
     send(sock, buffer, fileSize-1, 0);
     free(buffer);
     remove("output");
+    // } else if(fileSize == 0){
+    //     send(sock, "0", 1, 0);
+    // }
 }
 
 void restartClient(int sock) {
@@ -120,10 +125,11 @@ void restartClient(int sock) {
 }
 
 void handleServerActions(int sock) {
+    int timeout = 10;
     while (1) {
         char response[buffersize];
         recv(sock, response, sizeof(response), 0);
-
+        //printf("\n%s\n", response);
         int responseType = atoi(response);
 
         switch (responseType) {
@@ -139,10 +145,13 @@ void handleServerActions(int sock) {
             case 4:
                 restartClient(sock);
                 break;
-            default:
-                printf("S-a terminat legatura cu administratorul.\n");
+            case 5:
+                fprintf(stderr, "S-a terminat executia clientului.");
                 exit(0);
+                break;
         }
+        timeout--;
+        if(timeout < 0) break;
     }
 }
 
@@ -160,6 +169,7 @@ int main(int argc, char *argv[]) {
         perror("Eroare la conectare");
         exit(EXIT_FAILURE);
     }
+    
     handleServerActions(sock);
     close(sock);
     return 0;

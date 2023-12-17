@@ -1,0 +1,25 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build clientsocket",
+            "type": "shell",
+            "command": "make",
+            "args": ["clientsocket"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "build serversocket",
+            "type": "shell",
+            "command": "make",
+            "args": ["serversocket"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}
