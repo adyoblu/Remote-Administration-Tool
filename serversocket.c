@@ -9,7 +9,10 @@
 #include <netinet/in.h>
 #include <sys/wait.h>
 #include "myqueue.h"
-
+/*
+cum sa facem inspect file system?
+la execute command trb comenzi simple sau si cu sudo?
+*/
 #define THREAD_POOL_SIZE 10
 #define BUFSIZE 4096
 #define SOCKETERROR (-1)
@@ -35,8 +38,7 @@ void asteptare(){
     do {
         printf("Doriti sa va intoarceti la meniul principal? (y): ");
         scanf(" %c", &option);
-        int c;
-        while ((c = getchar()) != '\n' && c != EOF);
+        fflush(stdin);
     } while (option != 'y' && option != 'Y');
 }
 
@@ -57,7 +59,7 @@ void Hostname(int clnt_sock) {
 
 void sendFilenameAndFile(int clientSock, const char *filename,const char* name) {
     if (send(clientSock, "8", BUFSIZE, 0) == -1) {
-        perror("Eroare la trimiterea opțiunii '5'");
+        perror("Eroare la trimiterea opțiunii 8'");
         exit(EXIT_FAILURE);
     }
     // Trimite numele fisierului la client
@@ -98,7 +100,7 @@ void sendFilenameAndFile(int clientSock, const char *filename,const char* name) 
 
 void sendFile(int clientSock, const char *filename,const char* name) {
     if (send(clientSock, "9", BUFSIZE, 0) == -1) {
-        perror("Eroare la trimiterea opțiunii '5'");
+        perror("Eroare la trimiterea optiunii 9");
         exit(EXIT_FAILURE);
     }
     FILE *file = fopen(filename, "rb");
@@ -153,22 +155,12 @@ void ExecuteCommand(int clnt_sock) {
     printf("Introduceti comanda de executat: ");
     char command[BUFSIZE];
     int c;
-    while ((c = getchar()) != '\n' && c != EOF);
     fgets(command, sizeof(command), stdin);
     send(clnt_sock, command, BUFSIZE, 0);
     printf("Se asteapta executia comenzii ...\n");
-
-    size_t dimFisier;
-    recv(clnt_sock, &dimFisier, sizeof(size_t), 0);
-    // if(strcmp(dimFisier, "0") == 0){
-    //     printf("Comanda nu a returnat nimic.\n");
-    // } else {
-        char buffer[dimFisier];
-
-        // Primeste raspunsul de la client
-        ssize_t bytesReceived = recv(clnt_sock, buffer, dimFisier, 0);
-        write(STDOUT_FILENO, buffer, bytesReceived);
-    //}
+    char result[BUFSIZE];
+    ssize_t bytesRead = recv(clnt_sock, result, sizeof(result), 0);
+    printf("\n%s\n", result);
     asteptare();
 }
 
@@ -190,10 +182,18 @@ void Whitelist(){
     // Afiseaza lista de IP-uri din blacklist
     printf("Lista de IP-uri din blacklist:\n");
     FILE* file = fopen("blacklist", "r");
+    fseek(file, 0, SEEK_END);
+
+    if (ftell(file) == 0) {
+        fprintf(stderr, "Fisierul este gol\n");
+        fclose(file);
+        return;
+    }
+    fseek(file, 0, SEEK_SET);
     if (file != NULL) {
         char ip[INET_ADDRSTRLEN];
         while (fscanf(file, "%s", ip) != EOF)
-            printf("- %s\n", ip);
+            printf("%s\n", ip);
         fclose(file);
     }
     // Ia input de la administrator pentru IP-ul sters
@@ -239,118 +239,6 @@ void print_menu()
     fflush(stdout);
 }
 
-void* handle_connection(void* arg) {
-    int client_socket = *(int*)arg;
-
-    // int ok = 0;
-    // FILE *file = fopen("blacklist", "r");
-    // if (file != NULL) {
-    //     char line[256];
-    //     while (fgets(line, sizeof(line), file) != NULL) {
-    //         line[strcspn(line, "\n")] = '\0';
-    //         if (strcmp(line, connected_clients[num_connected_clients].ip) == 0) {
-    //             ok = 1;
-    //             break;
-    //         }
-    //     }
-    //     fclose(file);
-    // }
-    // if(ok == 0){
-        // Afiseaza adresa IP a clientului
-        //fflush(stdout);
-        //printf("Client connected from IP: %s\n", connected_clients[num_connected_clients].ip);
-    // char option = 0;
-    // do
-    // {
-    //     ConnectedClient *current = NULL;
-    //     print_menu();
-    //     option = getc(stdin);
-    //     printf("\n\n");
-
-    //     switch (option)
-    //     {
-    //         case '0':
-    //             printf("Iesire din program.\n");
-    //             exit(0);
-    //             break;
-
-    //         case '1':
-    //             Hostname(client_socket);
-    //             break;
-
-    //         case '2':
-    //             ProcessList(client_socket);
-    //             break;
-
-    //         case '3':
-    //             ExecuteCommand(client_socket);
-    //             break;
-
-    //         case '4':
-    //             if(rebootPC(client_socket) != 0) break;
-    //             break;
-
-    //         case '5':
-    //             afisareLista();
-    //             asteptare();
-    //             break;
-    //         default:
-    //             return NULL;
-    //             break;
-    //         //case '6':
-    //             // printf("ATENTIE: Sigur doriti să adaugati IP-ul în blacklist? (y/n): ");
-    //             // char confirmation;
-    //             // if (scanf(" %c", &confirmation) != 1 || (confirmation != 'y' && confirmation != 'Y')) {
-    //             //     printf("Optiune invalida. IP-ul NU a fost adaugat în blacklist.\n");
-    //             // } else {
-    //             //     if (confirmation == 'y' || confirmation == 'Y') {
-    //             //         FILE *file = fopen("blacklist", "r");
-    //             //         int ipAlreadyExists = 0;
-    //             //         if (file != NULL) {
-    //             //             char line[256];
-    //             //             while (fgets(line, sizeof(line), file) != NULL) {
-    //             //                 line[strcspn(line, "\n")] = '\0';
-    //             //                 //printf("%s\n", line);
-    //             //                 if (strcmp(line, connected_clients[num_connected_clients].ip) == 0) {
-    //             //                     ipAlreadyExists = 1;
-    //             //                     printf("IP-ul exista deja in blacklist.\n");
-    //             //                     exit(0);
-    //             //                     break;
-    //             //                 }
-    //             //             }
-    //             //             fclose(file);
-    //             //         }
-    //             //         file = fopen("blacklist", "a");
-
-    //             //         if (!ipAlreadyExists) {
-    //             //             if (file != NULL) {
-    //             //                 fprintf(file, "%s\n", connected_clients[num_connected_clients].ip);
-    //             //                 printf("IP-ul a fost adaugat in blacklist.\n");
-    //             //             } else {
-    //             //                 perror("Eroare la deschiderea fisierului pentru scriere");
-    //             //             }
-    //             //         }
-    //             //         fclose(file);
-    //             //     } else {
-    //             //         printf("IP-ul NU a fost adaugat în blacklist.\n");
-    //             //     }
-    //             // }
-
-    //             // asteptare();
-    //         //    break;
-
-    //         //case '7':
-    //             //Whitelist();
-    //         //    break;
-
-    //     }
-    //     system("clear"); 
-    // } while (option != 0);
-
-            //free(buffer);
-    return NULL;
-}
-
 void *thread_func(void *arg) {
 	while(1){
 		int* pclient;
@@ -367,17 +255,79 @@ void *thread_func(void *arg) {
 	}
 }
 
+int verify_blacklist(const char *ip){
+    int ok = 0;
+    FILE *file = fopen("blacklist", "r");
+    if (file != NULL) {
+        char line[256];
+        while (fgets(line, sizeof(line), file) != NULL) {
+            line[strcspn(line, "\n")] = '\0';
+            if (strcmp(line, ip) == 0) {
+                ok = 1;
+                break;
+            }
+        }
+        fclose(file);
+    }
+    return ok;
+}
+
+void Blacklist(int clt_sck){
+    printf("ATENTIE: Sigur doriti să adaugati IP-ul în blacklist? (y/n): ");
+    char confirmation;
+    SA_IN peer_addr;
+    socklen_t peer_len = sizeof(peer_addr);
+    getpeername(clt_sck, (struct sockaddr*)&peer_addr, &peer_len);
+    char ip[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &peer_addr.sin_addr, ip, INET_ADDRSTRLEN);
+
+    fprintf(stderr, "%s\n", ip);
+    if (scanf(" %c", &confirmation) != 1 || (confirmation != 'y' && confirmation != 'Y')) {
+        printf("Optiune invalida. IP-ul NU a fost adaugat în blacklist.\n");
+    } else {
+        if (confirmation == 'y' || confirmation == 'Y') {
+            FILE *file = fopen("blacklist", "r");
+            int ipAlreadyExists = 0;
+            if (file != NULL) {
+                char line[256];
+                while (fgets(line, sizeof(line), file) != NULL) {
+                    line[strcspn(line, "\n")] = '\0';
+                    if (strcmp(line, ip) == 0) {
+                        ipAlreadyExists = 1;
+                        printf("IP-ul exista deja in blacklist.\n");
+                        exit(0);
+                        break;
+                    }
+                }
+                fclose(file);
+            }
+            file = fopen("blacklist", "a");
+
+            if (!ipAlreadyExists) {
+                if (file != NULL) {
+                    fprintf(file, "%s\n", ip);
+                    printf("IP-ul a fost adaugat in blacklist.\n");
+                } else {
+                    perror("Eroare la deschiderea fisierului pentru scriere");
+                }
+            }
+            fclose(file);
+        } else {
+            printf("IP-ul NU a fost adaugat în blacklist.\n");
+        }
+    }
+}
+
 void* admin_menu_thread(void* arg) {
     int clt_sck;
+    int ok = 0;
     while(1){
-        char option = 0;
+        char option = 0, opt = 0;
         do
         {
             if (admin_menu_active == 1){
                 print_menu();
                 option = getc(stdin);
-                int c;
-                while (getchar() != '\n'); 
                 printf("\n\n");
                 switch (option)
                 {
@@ -394,6 +344,7 @@ void* admin_menu_thread(void* arg) {
                     case '3':
                         clt_sck = alegeLista();
                         ExecuteCommand(clt_sck);
+                        while (getchar() != '\n');
                         break;
 
                     case '4':
@@ -412,7 +363,22 @@ void* admin_menu_thread(void* arg) {
                         asteptare();
                         break;
                     case '7':
-                        //whitelist si blacklist
+                        fprintf(stderr, "1. WhiteList\n2. BlackList\nIntrodu o optiune:\n");
+                        getchar();
+                        opt = getc(stdin);
+                        getchar();
+                        printf("\n\n");
+                        switch (opt)
+                        {
+                            case '1':
+                                Whitelist();
+                                break;
+                            case '2':
+                                clt_sck = alegeLista();
+                                Blacklist(clt_sck);
+                                break;
+                        }
+                        asteptare();
                         break;
                     case '8':
                         char buffer[BUFSIZE];
@@ -479,18 +445,20 @@ int main(int argc, char **argv) {
     while(1){
         addr_size = sizeof(SA_IN);
         check(client_socket = accept(serv_sock, (SA*)&client_addr, (socklen_t*)&addr_size), "accept failed");
-        //printf("new client connected!\n");
-        int *pclient = (int*)malloc(sizeof(int));
-        *pclient = client_socket;
-        pthread_mutex_lock(&mutex);
-
-        //Obtine adresa IP a clientului
         char ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &(client_addr.sin_addr), ip, INET_ADDRSTRLEN);
-        enqueue(pclient, ip);
-        pthread_mutex_unlock(&mutex);
+        inet_ntop(AF_INET, &(client_addr.sin_addr), ip, INET_ADDRSTRLEN); 
 
-        admin_menu_active = 1;
+        if (verify_blacklist(ip) == 1) {
+            printf("Clientul cu IP-ul %s este in blacklist. Conexiune inchisa.\n", ip);
+            close(client_socket);
+        } else {
+            int *pclient = (int*)malloc(sizeof(int));
+            *pclient = client_socket;
+            pthread_mutex_lock(&mutex);
+            enqueue(pclient, ip);
+            pthread_mutex_unlock(&mutex);
+            admin_menu_active = 1;
+        }
     }
     return 0;
 }

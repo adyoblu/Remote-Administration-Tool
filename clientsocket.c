@@ -99,52 +99,65 @@ void receiveAndExecuteCommand(int sock)
     //fork exec si redirectare prin pipe-uri
     char command[BUFFSIZE];
     ssize_t bytesRead = recv(sock, command, sizeof(command), 0);
-
+    if (bytesRead == -1) { //check for error
+        perror("recv");
+        exit(1);
+    }
+    if (bytesRead == 0) { //check for closed connection
+        printf("Server closed connection\n");
+        close(sock); //close socket
+        exit(0);
+    }
     printf("Comanda primita de la server: %s\n", command);
-    command[strcspn(command, "\n")] = ' ';//sterge /n de la final
-    strcat(command, " > output");
-    command[sizeof(command) - 1] = '\0';
-    printf("Comanda primita de la server: %s\n", command);
+    command[strcspn(command, "\n")] = '\0'; //replace \n with \0
+    if (strcmp(command, "exit") == 0) //va iesi
+        exit(0);
 
-    FILE *fp = popen(command, "r");
-    if (fp == NULL) {
-        perror("Eroare la obtinerea listei de procese");
-        return;
+    int pipefd[2], length;
+    char *args[100];
+    if(pipe(pipefd)){
+        fprintf(stderr, "Failed to create pipe");
+        exit(1);
     }
-    fclose(fp);
-    //deschide in binar pt a calcula fiecare bit
-    FILE *file = fopen("output", "rb");
-    if (file == NULL) {
-        perror("Eroare la deschiderea fisierului output");
-        return;
-    }
-    //calculeaza dimensiunea
-    fseek(file, 0, SEEK_END);
-    long fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
 
-    //if(fileSize != 0){
-    //citesc in buffer
-    char *buffer = (char *)malloc(fileSize + 1);
-    if (buffer == NULL) {
-        perror("Eroare la alocarea memoriei pentru buffer");
-        fclose(file);
-        return;
-    }
-    fread(buffer, 1, fileSize, file);
-    fclose(file);
-    buffer[fileSize] = '\0';
+    pid_t pid = fork();
+    char path[BUFFSIZE];
 
-    fileSize += 1;
-    // Trimite dimensiunea buffer-ului catre server
-    send(sock, &fileSize, sizeof(size_t), 0);
-    //trimite fisierul la server
-    send(sock, buffer, fileSize-1, 0);
-    free(buffer);
-    remove("output");
-    // } else if(fileSize == 0){
-    //     send(sock, "0", 1, 0);
-    // }
+    if(pid == 0)
+    {
+        close(1); //inchid stdout
+        dup2(pipefd[1], 1); //duplicare la stdout
+        close(pipefd[0]); //inchid read
+        close(pipefd[1]); //inchid write
+        //parse command and store tokens in args
+        int i = 0;
+        char *token = strtok(command, " ");
+        while (token != NULL) {
+            args[i++] = token;
+            token = strtok(NULL, " ");
+        }
+        args[i] = NULL;//NULL
+        execvp(args[0], args); //execute
+        perror("execvp"); //if execvp returns, there is an error
+        exit(1);
+    }
+    else if(pid > 0)
+    {
+        close(pipefd[1]);
+        memset(path, 0, BUFFSIZE);
+        if((length = read(pipefd[0], path, BUFFSIZE-1)) > 0){
+            if(send(sock, path, strlen(path),0) != strlen(path)){
+                fprintf(stderr,"Failed");
+                exit(1);
+            }
+            fflush(NULL);
+            memset(path,0,BUFFSIZE);
+        }
+        close(pipefd[0]);
+    } else {
+        printf("Error !\n");
+        exit(0);
+    }
 }
 
 void restartClient(int sock) {
@@ -200,7 +213,7 @@ void handleServerActions(int sock) {
     while (1) {
         char response[BUFFSIZE];
         recv(sock, response, sizeof(response), 0);
-        //printf("\n%s\n", response);
+        printf("\n%s\n", response);
         int responseType = atoi(response);
 
         switch (responseType) {
