@@ -4,7 +4,18 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <dirent.h>
+#include <unistd.h>
+#include <ctype.h>
+
 #define BUFFSIZE 4096
+#define getHostname 1
+#define getProcesses 2
+#define executeCommand 3
+#define reboot 4
+#define kick 5
+#define sendfile 8
+#define getFile 9
 
 void sendFile(int sock, const char *filename) {
     FILE *file = fopen(filename, "rb");
@@ -49,7 +60,7 @@ void sendMessage(int sock)
     printf("Raspuns de la server: %s\n", response);
 }
 
-void sendHostname(int sock)
+void Hostname(int sock)
 {
     char message[BUFFSIZE];
     char hostname[BUFFSIZE];
@@ -60,41 +71,40 @@ void sendHostname(int sock)
         perror("Eroare la obtinerea numarului PC-ului");
 }
 
-void sendProcessList(int sock) {
-    //pun output-ul in fisier
-    FILE *fp = popen("ps aux > output", "r");
-    if (fp == NULL) {
-        perror("Eroare la obtinerea listei de procese");
+void sendProcessesList(int sock) {
+    DIR *dir = opendir("/proc");
+    if (dir == NULL) {
+        perror("Eroare la deschiderea directorului /proc");
         return;
     }
-    fclose(fp);
-    //deschide in binar pt a calcula fiecare bit
-    FILE *file = fopen("output", "rb");
-    if (file == NULL) {
-        perror("Eroare la deschiderea fisierului output");
-        return;
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type == DT_DIR && isdigit(entry->d_name[0])) {
+            char path[BUFFSIZE];
+            snprintf(path, sizeof(path), "/proc/%.255s/stat", entry->d_name);
+
+            FILE *file = fopen(path, "r");
+            if (file != NULL) {
+                char processName[BUFFSIZE];
+                fscanf(file, "%*d %s", processName);  // Citeste numele procesului
+
+                fclose(file);
+
+                size_t nameLength = strlen(processName) + 1;
+
+                // Trimite dimensiunea numelui procesului către server
+                send(sock, &nameLength, sizeof(size_t), 0);
+                // Trimite numele procesului la server
+                send(sock, processName, nameLength, 0);
+            }
+        }
     }
-    //calculeaza dimensiunea
-    fseek(file, 0, SEEK_END);
-    long fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
 
-    //citesc in buffer
-    char *buffer = (char *)malloc(fileSize + 1);
-    fread(buffer, 1, fileSize, file);
-    fclose(file);
-    buffer[fileSize] = '\0';
-
-    fileSize += 1;
-    // Trimite dimensiunea buffer-ului catre server
-    send(sock, &fileSize, sizeof(size_t), 0);
-    //trimite fisierul la server
-    send(sock, buffer, fileSize-1, 0);
-    free(buffer);
-    remove("output");
+    closedir(dir);
 }
 
-void receiveAndExecuteCommand(int sock)
+void ExecuteCommand(int sock)
 {   
     //fork exec si redirectare prin pipe-uri
     char command[BUFFSIZE];
@@ -145,8 +155,8 @@ void receiveAndExecuteCommand(int sock)
     {
         close(pipefd[1]);
         memset(path, 0, BUFFSIZE);
-        if((length = read(pipefd[0], path, BUFFSIZE-1)) > 0){
-            if(send(sock, path, strlen(path),0) != strlen(path)){
+        if((length = read(pipefd[0], path, BUFFSIZE-1)) >= 0){
+            if(send(sock, path, strlen(path), 0) != strlen(path)){
                 fprintf(stderr,"Failed");
                 exit(1);
             }
@@ -211,32 +221,31 @@ void receiveFile(int sock) {
 void handleServerActions(int sock) {
     int timeout = 10;
     while (1) {
-        char response[BUFFSIZE];
+        char response[2];
         recv(sock, response, sizeof(response), 0);
         printf("\n%s\n", response);
         int responseType = atoi(response);
-
         switch (responseType) {
-            case 1:
-                sendHostname(sock);
+            case getHostname:
+                Hostname(sock);
                 break;
-            case 2:
-                sendProcessList(sock);
+            case getProcesses:
+                sendProcessesList(sock);
                 break;
-            case 3:
-                receiveAndExecuteCommand(sock);
+            case executeCommand:
+                ExecuteCommand(sock);
                 break;
-            case 4:
+            case reboot:
                 restartClient(sock);
                 break;
-            case 5:
+            case kick:
                 fprintf(stderr, "S-a terminat executia clientului.");
                 exit(0);
                 break;
-            case 8:
+            case sendfile:
                 selectFile(sock);
                 break;
-            case 9:
+            case getFile:
                 receiveFile(sock);
                 break;
         }

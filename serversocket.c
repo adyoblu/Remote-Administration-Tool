@@ -10,9 +10,26 @@
 #include <sys/wait.h>
 #include "myqueue.h"
 /*
-cum sa facem inspect file system?
-la execute command trb comenzi simple sau si cu sudo?
+file system sa facem tree al fisierelor din folderul curent cu dim depth comanda tree
+trb date comenzi cu sudo
+/proc - ce afiseaza si ps sa fie si la el
+pt mkdir sau alte comenzi se blocheaza execute command
+open in loc de FILE*
+organizare functii in mai multe fisiere
 */
+#define exitServer '0'
+#define getHostname '1'
+#define getProcesses '2'
+#define executeCommand '3'
+#define reboot '4'
+#define kickClient '5'
+#define afisareClienti '6'
+#define whitelistBlacklist '7'
+#define getFile '8'
+#define sendfile '9'
+#define whitelist '1'
+#define blacklist '2'
+
 #define THREAD_POOL_SIZE 10
 #define BUFSIZE 4096
 #define SOCKETERROR (-1)
@@ -43,7 +60,7 @@ void asteptare(){
 }
 
 void Hostname(int clnt_sock) {
-    if (send(clnt_sock, "1", BUFSIZE, 0) == -1) {//trimit 1 ca e prima optiune din meniu pt client
+    if (send(clnt_sock, "1", 1, 0) == -1) {//trimit 1 ca e prima optiune din meniu pt client
         perror("Eroare la trimiterea opțiunii 1");
         exit(EXIT_FAILURE);
     }
@@ -58,7 +75,7 @@ void Hostname(int clnt_sock) {
 }
 
 void sendFilenameAndFile(int clientSock, const char *filename,const char* name) {
-    if (send(clientSock, "8", BUFSIZE, 0) == -1) {
+    if (send(clientSock, "8", 1, 0) == -1) {
         perror("Eroare la trimiterea opțiunii 8'");
         exit(EXIT_FAILURE);
     }
@@ -99,7 +116,7 @@ void sendFilenameAndFile(int clientSock, const char *filename,const char* name) 
 }
 
 void sendFile(int clientSock, const char *filename,const char* name) {
-    if (send(clientSock, "9", BUFSIZE, 0) == -1) {
+    if (send(clientSock, "9", 1, 0) == -1) {
         perror("Eroare la trimiterea optiunii 9");
         exit(EXIT_FAILURE);
     }
@@ -127,8 +144,8 @@ void sendFile(int clientSock, const char *filename,const char* name) {
     asteptare();
 } 
 
-void ProcessList(int clnt_sock) {
-    send(clnt_sock, "2", BUFSIZE, 0); // trimit 2 ca e a doua opțiune din meniu pt client
+void getProcessesList(int clnt_sock) {
+    send(clnt_sock, "2", 1, 0); // trimit 2 ca e a doua opțiune din meniu pt client
     printf("Se asteapta lista de procese ...\n");
 
     // Primeste dimensiunea buffer-ului
@@ -151,7 +168,7 @@ void ProcessList(int clnt_sock) {
 
 void ExecuteCommand(int clnt_sock) {
     //Aici client-ul trebuie sa astepte 2 trimiteri consecutive adica cand citeste optiunea 1/2/3/4 si dupa mai asteapta comanda de la admin
-    send(clnt_sock, "3", BUFSIZE, 0);//trimit 3 ca e a doua optiune din meniu pt client
+    send(clnt_sock, "3", 1, 0);//trimit 3 ca e a doua optiune din meniu pt client
     printf("Introduceti comanda de executat: ");
     char command[BUFSIZE];
     int c;
@@ -165,7 +182,7 @@ void ExecuteCommand(int clnt_sock) {
 }
 
 int rebootPC(int clnt_sock) {
-    send(clnt_sock, "4", BUFSIZE, 0);
+    send(clnt_sock, "4", 1, 0);
     int shutdown_code;
     recv(clnt_sock, &shutdown_code, sizeof(shutdown_code), 0);
 
@@ -331,38 +348,38 @@ void* admin_menu_thread(void* arg) {
                 printf("\n\n");
                 switch (option)
                 {
-                    case '1':
+                    case getHostname:
                         clt_sck = alegeLista();
                         Hostname(clt_sck);
                         break;
 
-                    case '2':
+                    case getProcesses:
                         clt_sck = alegeLista();
-                        ProcessList(clt_sck);
+                        getProcessesList(clt_sck);
                         break;
 
-                    case '3':
+                    case executeCommand:
                         clt_sck = alegeLista();
                         ExecuteCommand(clt_sck);
                         while (getchar() != '\n');
                         break;
 
-                    case '4':
+                    case reboot:
                         clt_sck = alegeLista();
                         rebootPC(clt_sck);
                         break;
 
-                    case '5':
+                    case kickClient:
                         clt_sck = alegeLista();
-                        send(clt_sck, "5", BUFSIZE, 0);
+                        send(clt_sck, "5", 1, 0);
                         pthread_cond_signal(&condition_var);
                         break;
 
-                    case '6':
+                    case afisareClienti:
                         afisareLista();
                         asteptare();
                         break;
-                    case '7':
+                    case whitelistBlacklist:
                         fprintf(stderr, "1. WhiteList\n2. BlackList\nIntrodu o optiune:\n");
                         getchar();
                         opt = getc(stdin);
@@ -370,17 +387,17 @@ void* admin_menu_thread(void* arg) {
                         printf("\n\n");
                         switch (opt)
                         {
-                            case '1':
+                            case whitelist:
                                 Whitelist();
                                 break;
-                            case '2':
+                            case blacklist:
                                 clt_sck = alegeLista();
                                 Blacklist(clt_sck);
                                 break;
                         }
                         asteptare();
                         break;
-                    case '8':
+                    case getFile:
                         char buffer[BUFSIZE];
                         printf("Da calea fisierului:");
                         scanf("%s",buffer);
@@ -391,7 +408,7 @@ void* admin_menu_thread(void* arg) {
                         sendFilenameAndFile(clt_sck, buffer, buffer1);
                         break;
 
-                    case '9':
+                    case sendfile:
                         char buff[BUFSIZE];
                         printf("Da calea fisierului:");
                         scanf("%s",buffer);
@@ -402,7 +419,7 @@ void* admin_menu_thread(void* arg) {
                         sendFile(clt_sck,buffer,buffer1);
                         break;
 
-                    case '0':
+                    case exitServer:
                         printf("Iesire din program.\n");
                         pthread_cond_signal(&condition_var);
                         exit(0);

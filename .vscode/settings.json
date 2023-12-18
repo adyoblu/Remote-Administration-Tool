@@ -1,9 +1,5 @@
 {
     "files.associations": {
-        "inet.h": "c",
-        "socket.h": "c",
-        "system_error": "c"
-    },
-    "C_Cpp.errorSquiggles": "enabled",
-    "cmake.configureOnOpen": false
+        "unistd.h": "c"
+    }
 }
