@@ -1,21 +1,4 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <dirent.h>
-#include <unistd.h>
-#include <ctype.h>
-
-#define BUFFSIZE 4096
-#define getHostname 1
-#define getProcesses 2
-#define executeCommand 3
-#define reboot 4
-#define kick 5
-#define sendfile 8
-#define getFile 9
+#include "utilities.c"
 
 void sendFile(int sock, const char *filename) {
     FILE *file = fopen(filename, "rb");
@@ -72,37 +55,112 @@ void Hostname(int sock)
 }
 
 void sendProcessesList(int sock) {
-    DIR *dir = opendir("/proc");
-    if (dir == NULL) {
+    DIR *procDir = opendir("/proc");
+    if (procDir == NULL) {
         perror("Eroare la deschiderea directorului /proc");
         return;
     }
 
+    // Deschide fișierul "output" în modul de scriere
+    int outputFile = open("output", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (outputFile == -1) {
+        perror("Eroare la deschiderea fisierului output");
+        closedir(procDir);
+        return;
+    }
+
+    char buffer[BUFFSIZE];
+    snprintf(buffer, 59, "USER\t\tPID\t%%CPU\t%%MEM\tVSZ\tRSS\tTTY\tSTAT\tSTART\tTIME\tCOMMAND\n");
+    write(outputFile, buffer, 56);
+    
     struct dirent *entry;
-    while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type == DT_DIR && isdigit(entry->d_name[0])) {
-            char path[BUFFSIZE];
-            snprintf(path, sizeof(path), "/proc/%.255s/stat", entry->d_name);
-
-            FILE *file = fopen(path, "r");
-            if (file != NULL) {
-                char processName[BUFFSIZE];
-                fscanf(file, "%*d %s", processName);  // Citeste numele procesului
-
-                fclose(file);
-
-                size_t nameLength = strlen(processName) + 1;
-
-                // Trimite dimensiunea numelui procesului către server
-                send(sock, &nameLength, sizeof(size_t), 0);
-                // Trimite numele procesului la server
-                send(sock, processName, nameLength, 0);
+    while ((entry = readdir(procDir)) != NULL) {
+        if (entry->d_type == DT_DIR && atoi(entry->d_name) > 0) {
+            char procPath[BUFFSIZE];
+            snprintf(procPath, sizeof(procPath), "/proc/%s/stat", entry->d_name);
+            
+            if(access(procPath, F_OK) != 0){
+                continue;
             }
+
+            int procFile = open(procPath, O_RDONLY);
+
+            ssize_t bytesRead = read(procFile, buffer, sizeof(buffer));
+            bytesRead++;
+            buffer[bytesRead] = '\n';
+            close(procFile);
+            char *user = getProcessUserFromLs(entry->d_name);
+            write(outputFile, user, strlen(user));//USER
+            write(outputFile, "\t\t", 2);
+            write(outputFile, entry->d_name, strlen(entry->d_name));//PID
+            write(outputFile, "\t", 1);
+
+            int utime, stime, pid;
+            unsigned long starttime;
+            long int rss;
+            sscanf(buffer, "%d %*s %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %d %d %*d %*d %*d %*d %*d %*d %lu %*d",
+            &pid, &utime, &stime, &starttime);
+
+            double cpu_usage = getCPUusage(utime, stime, starttime);
+            char cpuUsageStr[20];
+            snprintf(cpuUsageStr, sizeof(cpuUsageStr), "%.2f", cpu_usage);
+            write(outputFile, cpuUsageStr, strlen(cpuUsageStr));//%CPU
+
+            write(outputFile, "\t", 1);
+            double mem_usage = getMEMusage(pid, buffer, rss);
+            char memUsage[20];
+            snprintf(memUsage, sizeof(memUsage), "%.2f", mem_usage);
+            write(outputFile, memUsage, strlen(memUsage));//%MEM
+            
+            write(outputFile, "\t", 1);
+            //printf("PID %d, mem: %.2f%%\n", pid, mem_usage);
+            
+            
+            // COMMAND: Read the command from /proc/<pid>/cmdline
+            // snprintf(procPath, sizeof(procPath), "/proc/%s/cmdline", entry->d_name);
+            // procFile = open(procPath, O_RDONLY);
+            // if (procFile != -1) {
+            //     bytesRead = read(procFile, buffer, sizeof(buffer));
+            //     write(outputFile, &bytesRead, sizeof(bytesRead));
+            //     close(procFile);
+            // } else {
+            //     perror("Error opening cmdline file");
+            // }
+            write(outputFile, "\n", 1);
         }
     }
 
-    closedir(dir);
+
+    close(outputFile);
+
+    // Deschide fișierul "output" în modul de citire binară
+    int file = open("output", O_RDONLY);
+    if (file == -1) {
+        perror("Eroare la deschiderea fisierului output");
+        closedir(procDir);
+        return;
+    }
+
+    // Calculează dimensiunea
+    off_t fileSize = lseek(file, 0, SEEK_END);
+    lseek(file, 0, SEEK_SET);
+
+    // Citeste în buffer
+    char *bufferRead = (char *)malloc(fileSize);
+    ssize_t bytesRead = read(file, bufferRead, fileSize);
+    close(file);
+
+    // Trimite dimensiunea buffer-ului către server
+    send(sock, &fileSize, sizeof(size_t), 0);
+    // Trimite fișierul la server
+    send(sock, bufferRead, bytesRead, 0);
+    free(bufferRead);
+
+    // Închide directorul /proc
+    closedir(procDir);
+    //free(info);
 }
+
 
 void ExecuteCommand(int sock)
 {   
