@@ -86,4 +86,3 @@ char* getProcessUserFromLs(const char *pid) {
     pclose(lsOutput);
     return NULL;
 }
-

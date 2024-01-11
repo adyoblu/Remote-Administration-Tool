@@ -49,7 +49,10 @@ void Hostname(int sock)
     char hostname[BUFFSIZE];
     if (gethostname(hostname, sizeof(hostname)) == 0) {
         fprintf(stderr, "%s", hostname);
-        send(sock, hostname, strlen(hostname), 0);
+        size_t hostnameLength = strlen(hostname);
+        size_t networkByteOrder = htonl(hostnameLength);
+        send(sock, &networkByteOrder, sizeof(networkByteOrder), 0);
+        send(sock, hostname, hostnameLength, 0);
     } else 
         perror("Eroare la obtinerea numarului PC-ului");
 }
@@ -61,7 +64,6 @@ void sendProcessesList(int sock) {
         return;
     }
 
-    // Deschide fișierul "output" în modul de scriere
     int outputFile = open("output", O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
     if (outputFile == -1) {
         perror("Eroare la deschiderea fisierului output");
@@ -70,8 +72,8 @@ void sendProcessesList(int sock) {
     }
 
     char buffer[BUFFSIZE];
-    snprintf(buffer, 59, "USER\t\tPID\t%%CPU\t%%MEM\tVSZ\tRSS\tTTY\tSTAT\tSTART\tTIME\tCOMMAND\n");
-    write(outputFile, buffer, 56);
+    int len = snprintf(buffer, 59, "USER\t\tPID\t%%CPU\t%%MEM\tVSZ\tRSS\tTTY\tSTAT\tSTART\tTIME\tCOMMAND\n");
+    write(outputFile, buffer, len);
     
     struct dirent *entry;
     while ((entry = readdir(procDir)) != NULL) {
@@ -115,7 +117,7 @@ void sendProcessesList(int sock) {
             write(outputFile, "\t", 1);
             //printf("PID %d, mem: %.2f%%\n", pid, mem_usage);
             
-            
+
             // COMMAND: Read the command from /proc/<pid>/cmdline
             // snprintf(procPath, sizeof(procPath), "/proc/%s/cmdline", entry->d_name);
             // procFile = open(procPath, O_RDONLY);
@@ -133,7 +135,6 @@ void sendProcessesList(int sock) {
 
     close(outputFile);
 
-    // Deschide fișierul "output" în modul de citire binară
     int file = open("output", O_RDONLY);
     if (file == -1) {
         perror("Eroare la deschiderea fisierului output");
@@ -141,7 +142,6 @@ void sendProcessesList(int sock) {
         return;
     }
 
-    // Calculează dimensiunea
     off_t fileSize = lseek(file, 0, SEEK_END);
     lseek(file, 0, SEEK_SET);
 
@@ -149,16 +149,14 @@ void sendProcessesList(int sock) {
     char *bufferRead = (char *)malloc(fileSize);
     ssize_t bytesRead = read(file, bufferRead, fileSize);
     close(file);
-
+    bufferRead[fileSize+1] = '\0';
     // Trimite dimensiunea buffer-ului către server
     send(sock, &fileSize, sizeof(size_t), 0);
     // Trimite fișierul la server
     send(sock, bufferRead, bytesRead, 0);
     free(bufferRead);
 
-    // Închide directorul /proc
     closedir(procDir);
-    //free(info);
 }
 
 
@@ -214,6 +212,7 @@ void ExecuteCommand(int sock)
         close(pipefd[1]);
         memset(path, 0, BUFFSIZE);
         if((length = read(pipefd[0], path, BUFFSIZE-1)) >= 0){
+            send(sock, &length, sizeof(length), 0);
             if(send(sock, path, strlen(path), 0) != strlen(path)){
                 fprintf(stderr,"Failed");
                 exit(1);
@@ -237,7 +236,7 @@ void restartClient(int sock) {
 }
 
 void receiveFile(int sock) {
-    // Primește numele fișierului
+    //numele fisierului
     char filename[BUFFSIZE];
     ssize_t bytesRead = recv(sock, filename, sizeof(filename), 0);
     if (bytesRead <= 0) {
@@ -245,18 +244,18 @@ void receiveFile(int sock) {
         return;
     }
 
-    // Primește dimensiunea fișierului
+    //dimensiunea fisierului
     size_t fileSize;
     recv(sock, &fileSize, sizeof(size_t), 0);
 
-    // Deschide fișierul pentru scriere
+    //scriere in fisier
     FILE *file = fopen(filename, "wb");
     if (file == NULL) {
         perror("Eroare la deschiderea fisierului pentru scriere");
         return;
     }
 
-    // Primește conținutul fișierului și scrie-l în fișier
+    //scriere continut in fisier
     char buffer[BUFFSIZE];
     size_t totalBytesReceived = 0;
 
@@ -279,7 +278,7 @@ void receiveFile(int sock) {
 void handleServerActions(int sock) {
     int timeout = 10;
     while (1) {
-        char response[2];
+        char response[BUFFSIZE];
         recv(sock, response, sizeof(response), 0);
         printf("\n%s\n", response);
         int responseType = atoi(response);

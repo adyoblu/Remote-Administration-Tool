@@ -37,12 +37,12 @@ int* dequeue(){
 int alegeLista() {
     ConnectedClient *x = head;
 	int i;
-	fprintf(stderr, "Lista clientilor conectati:\n");
-    for (i = 0; x != NULL; fprintf(stderr, "%d. IP: %s\n", i, x->ip), x = x->next, i++) {}
+	fprintf(stdout, "Lista clientilor conectati:\n");
+    for (i = 0; x != NULL; fprintf(stdout, "%d. IP: %s\n", i, x->ip), x = x->next, i++) {}
 	char buffer[256];
 	int option;
     do {
-        fprintf(stderr, "Alege un client: ");
+        fprintf(stdout, "Alege un client: ");
         scanf(" %d", &option);
         int c;
         while ((c = getchar()) != '\n' && c != EOF);
@@ -58,7 +58,7 @@ int alegeLista() {
 
 void afisareLista(){
 	ConnectedClient *x = head;
-	fprintf(stderr, "Lista clientilor conectati:\n");
+	fprintf(stdout, "Lista clientilor conectati:\n");
     for (int i = 0; x != NULL; fprintf(stderr, "%d. IP: %s\n", i, x->ip), x = x->next, i++) {}
 }
 

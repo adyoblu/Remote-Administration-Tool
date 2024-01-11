@@ -2,6 +2,7 @@
     "files.associations": {
         "unistd.h": "c",
         "dirent.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "semaphore.h": "c"
     }
 }

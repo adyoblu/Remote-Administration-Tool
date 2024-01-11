@@ -10,9 +10,7 @@
 #include <sys/wait.h>
 #include "myqueue.h"
 /*
-file system sa facem tree al fisierelor din folderul curent cu dim depth comanda tree
 trb date comenzi cu sudo
-/proc - ce afiseaza si ps sa fie si la el
 pt mkdir sau alte comenzi se blocheaza execute command
 open in loc de FILE*
 organizare functii in mai multe fisiere
@@ -29,18 +27,53 @@ organizare functii in mai multe fisiere
 #define sendfile '9'
 #define whitelist '1'
 #define blacklist '2'
-
+#define SOCKETERROR (-1)
 #define THREAD_POOL_SIZE 10
 #define BUFSIZE 4096
-#define SOCKETERROR (-1)
 
 typedef struct sockaddr_in SA_IN;
 typedef struct sockaddr SA;
 int admin_menu_active = 0;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t admin_menu_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_t thread_pool[THREAD_POOL_SIZE];
 pthread_t admin_menu_thread_id;
 pthread_cond_t condition_var = PTHREAD_COND_INITIALIZER;
+
+int verify_blacklist(const char *ip){
+    int ok = 0;
+    FILE *file = fopen("blacklist", "r");
+    if (file != NULL) {
+        char line[256];
+        while (fgets(line, sizeof(line), file) != NULL) {
+            line[strcspn(line, "\n")] = '\0';
+            if (strcmp(line, ip) == 0) {
+                ok = 1;
+                break;
+            }
+        }
+        fclose(file);
+    }
+    return ok;
+}
+
+void print_menu()
+{   
+    printf("\n### Meniu Administrator ###\n");
+    printf("0. Iesire\n");
+    printf("1. Afiseaza hostname pentru un pc\n");
+    printf("2. Afiseaza lista de procese ale unui utilizator\n");
+    printf("3. Executa comanda pentru un utilizator\n");
+    printf("4. Reporneste PC-ul unui utilizator\n");
+    printf("5. Kick client\n");
+    printf("6. Afiseaza toti clientii conectati\n");
+    printf("7. Blacklist/Whitelist\n");
+    printf("8. Ia un fisier\n");
+    printf("9. Trimite un fisier\n");
+    printf("----------------------------------------------------------\n");
+	printf("Introduceti optiunea dorita:\n");
+    fflush(stdout);
+}
 
 int check(int exp, const char *msg){
 	if(exp == SOCKETERROR){
@@ -60,16 +93,26 @@ void asteptare(){
 }
 
 void Hostname(int clnt_sock) {
-    if (send(clnt_sock, "1", 1, 0) == -1) {//trimit 1 ca e prima optiune din meniu pt client
-        perror("Eroare la trimiterea opțiunii 1");
+    // Send the option "1" as the first menu option
+    if (send(clnt_sock, "1", 1, 0) == -1) {
+        perror("Error sending menu option 1");
         exit(EXIT_FAILURE);
     }
-    printf("Se așteaptă hostname ...\n");
+
+    printf("Waiting for hostname...\n");
+
+    // Receive the length of the hostname
+    size_t hostnameLength;
+    if (recv(clnt_sock, &hostnameLength, sizeof(hostnameLength), 0) == -1) {
+        perror("Error receiving hostname length");
+        exit(EXIT_FAILURE);
+    }
+
+    hostnameLength = ntohl(hostnameLength);
+
     char buffer[BUFSIZE];
-    if (recv(clnt_sock, buffer, BUFSIZE, 0) == -1) {
-        perror("Eroare la primirea numelui de host");
-        exit(EXIT_FAILURE);
-    }
+    recv(clnt_sock, buffer, hostnameLength, 0);
+    buffer[hostnameLength + 1] = '\0';
     fprintf(stderr, "Hostname: %s\n", buffer);
     asteptare();
 }
@@ -153,7 +196,7 @@ void getProcessesList(int clnt_sock) {
     recv(clnt_sock, &dimFisier, sizeof(size_t), 0);
     char buffer[dimFisier];
 
-    memset(buffer, 0, sizeof(buffer)); // Inițializare buffer cu 0
+    memset(buffer, 0, sizeof(buffer));
     ssize_t bytesReceived = recv(clnt_sock, buffer, dimFisier, 0);
 
     if (bytesReceived > 0) {
@@ -176,7 +219,10 @@ void ExecuteCommand(int clnt_sock) {
     send(clnt_sock, command, BUFSIZE, 0);
     printf("Se asteapta executia comenzii ...\n");
     char result[BUFSIZE];
-    ssize_t bytesRead = recv(clnt_sock, result, sizeof(result), 0);
+    size_t hostnameLength;
+    recv(clnt_sock, &hostnameLength, sizeof(hostnameLength), 0);
+    ssize_t bytesRead = recv(clnt_sock, result, hostnameLength, 0);
+    result[hostnameLength+1] = '\0';
     printf("\n%s\n", result);
     asteptare();
 }
@@ -238,24 +284,6 @@ void Whitelist(){
     }
 }
 
-void print_menu()
-{   
-    printf("\n### Meniu Administrator ###\n");
-    printf("0. Iesire\n");
-    printf("1. Afiseaza hostname pentru un pc\n");
-    printf("2. Afiseaza lista de procese ale unui utilizator\n");
-    printf("3. Executa comanda pentru un utilizator\n");
-    printf("4. Reporneste PC-ul unui utilizator\n");
-    printf("5. Kick client\n");
-    printf("6. Afiseaza toti clientii conectati\n");
-    printf("7. Blacklist/Whitelist\n");
-    printf("8. Ia un fisier\n");
-    printf("9. Trimite un fisier\n");
-    printf("----------------------------------------------------------\n");
-	printf("Introduceti optiunea dorita:\n");
-    fflush(stdout);
-}
-
 void *thread_func(void *arg) {
 	while(1){
 		int* pclient;
@@ -270,23 +298,6 @@ void *thread_func(void *arg) {
 		// 	handle_connection(pclient);
 		// }
 	}
-}
-
-int verify_blacklist(const char *ip){
-    int ok = 0;
-    FILE *file = fopen("blacklist", "r");
-    if (file != NULL) {
-        char line[256];
-        while (fgets(line, sizeof(line), file) != NULL) {
-            line[strcspn(line, "\n")] = '\0';
-            if (strcmp(line, ip) == 0) {
-                ok = 1;
-                break;
-            }
-        }
-        fclose(file);
-    }
-    return ok;
 }
 
 void Blacklist(int clt_sck){
@@ -342,6 +353,7 @@ void* admin_menu_thread(void* arg) {
         char option = 0, opt = 0;
         do
         {
+            pthread_mutex_lock(&admin_menu_mutex);
             if (admin_menu_active == 1){
                 print_menu();
                 option = getc(stdin);
@@ -428,6 +440,7 @@ void* admin_menu_thread(void* arg) {
                 system("clear");
             }
             if(verifica_clienti() == 0) admin_menu_active = 0;
+            pthread_mutex_unlock(&admin_menu_mutex);
         } while (option != 0);
     }
     return NULL;
@@ -453,10 +466,10 @@ int main(int argc, char **argv) {
     serv_addr.sin_port = htons(5566);//port
 
     int opt = 1;
-    setsockopt(serv_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    setsockopt(serv_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));//reutilizare
     check(bind(serv_sock, (SA*)&serv_addr, sizeof(serv_addr)), "Bind failed");
-    //poate primi pana la 100 de clienti
-    check(listen(serv_sock, 100), "Listen failed");
+    //poate primi pana la 10 de clienti
+    check(listen(serv_sock, 10), "Listen failed");
 
     printf("Waiting for connections...\n");
     while(1){
@@ -473,8 +486,8 @@ int main(int argc, char **argv) {
             *pclient = client_socket;
             pthread_mutex_lock(&mutex);
             enqueue(pclient, ip);
-            pthread_mutex_unlock(&mutex);
             admin_menu_active = 1;
+            pthread_mutex_unlock(&mutex);
         }
     }
     return 0;
