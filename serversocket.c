@@ -1,13 +1,4 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <pthread.h>
-#include <signal.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <sys/wait.h>
+#include "utilities.c"
 #include "myqueue.h"
 /*
 trb date comenzi cu sudo
@@ -15,21 +6,7 @@ pt mkdir sau alte comenzi se blocheaza execute command
 open in loc de FILE*
 organizare functii in mai multe fisiere
 */
-#define exitServer '0'
-#define getHostname '1'
-#define getProcesses '2'
-#define executeCommand '3'
-#define reboot '4'
-#define kickClient '5'
-#define afisareClienti '6'
-#define whitelistBlacklist '7'
-#define getFile '8'
-#define sendfile '9'
-#define whitelist '1'
-#define blacklist '2'
-#define SOCKETERROR (-1)
-#define THREAD_POOL_SIZE 10
-#define BUFSIZE 4096
+
 
 typedef struct sockaddr_in SA_IN;
 typedef struct sockaddr SA;
@@ -94,11 +71,7 @@ void asteptare(){
 
 void Hostname(int clnt_sock) {
     // Send the option "1" as the first menu option
-    if (send(clnt_sock, "1", 1, 0) == -1) {
-        perror("Error sending menu option 1");
-        exit(EXIT_FAILURE);
-    }
-
+    send(clnt_sock, "1", 1, 0);
     printf("Waiting for hostname...\n");
 
     // Receive the length of the hostname
@@ -110,82 +83,78 @@ void Hostname(int clnt_sock) {
 
     hostnameLength = ntohl(hostnameLength);
 
-    char buffer[BUFSIZE];
+    char buffer[BUFFSIZE];
     recv(clnt_sock, buffer, hostnameLength, 0);
-    buffer[hostnameLength + 1] = '\0';
+    buffer[hostnameLength] = '\0';
     fprintf(stderr, "Hostname: %s\n", buffer);
     asteptare();
 }
 
-void sendFilenameAndFile(int clientSock, const char *filename,const char* name) {
-    if (send(clientSock, "8", 1, 0) == -1) {
-        perror("Eroare la trimiterea opțiunii 8'");
-        exit(EXIT_FAILURE);
-    }
-    // Trimite numele fisierului la client
-    send(clientSock, filename, strlen(filename), 0);
+void receiveFile(int clientSock, const char *filename,const char* name) {
+    send(clientSock, "9", 1, 0);
 
-    // Deschide fișierul pentru scriere binara
-    FILE *file = fopen(name, "wb");
-    if (file == NULL) {
-        perror("Eroare la deschiderea fisierului pentru scriere");
-        return;
-    }
+    int length = strlen(filename);
+    send(clientSock, &length, sizeof(length), 0);//trimit dimensiunea filename
+    send(clientSock, filename, length, 0);//trimit filename
+    
+    int file = open(name, O_WRONLY | O_CREAT | O_TRUNC, 0666);//creez fisier cu numele propus de admin
 
-    // Primeste dimensiunea fisierului de la client
-    size_t fileSize;
-    recv(clientSock, &fileSize, sizeof(size_t), 0);
+    off_t fileSize;
+    recv(clientSock, &fileSize, sizeof(off_t), 0);//primesc dimensiune fisier de la client
 
-    // Primeste continutul fisierului într-un buffer
-    char buffer[BUFSIZE];
-    size_t bytesReceived = 0;
+    char buffer[BUFFSIZE];
+    ssize_t bytesReceived;
 
-    while (bytesReceived < fileSize) {
-        ssize_t bytesRead = recv(clientSock, buffer, sizeof(buffer), 0);
-        if (bytesRead <= 0) {
-            perror("Eroare la primirea datelor fisierului");
-            fclose(file);
+    while ((bytesReceived = recv(clientSock, buffer, sizeof(buffer), 0)) > 0) {
+        ssize_t bytesWritten = write(file, buffer, bytesReceived);
+        if (bytesWritten == -1) {
+            fprintf(stderr, "Error writing to file");
+            close(file);
             return;
         }
-
-        // Scrie datele primite în fisier
-        fwrite(buffer, 1, bytesRead, file);
-        bytesReceived += bytesRead;
     }
 
-    fclose(file);
-    printf("Fisierul '%s' a fost primit si salvat cu succes.\n", filename);
+    if (bytesReceived == -1) {
+        fprintf(stderr, "Error receiving file content");
+    }
+
+    close(file);
+    fprintf(stderr, "Fisierul '%s' a fost primit si salvat cu succes.\n", filename);
     asteptare();
 }
 
-void sendFile(int clientSock, const char *filename,const char* name) {
-    if (send(clientSock, "9", 1, 0) == -1) {
-        perror("Eroare la trimiterea optiunii 9");
-        exit(EXIT_FAILURE);
+void sendFile(int clientSock, const char *filename, const char *name) {//trimit fisier de pe server la client
+    if (send(clientSock, "8", 1, 0) == -1) {
+        fprintf(stderr, "Eroare la trimiterea optiunii 8");
+        return;
     }
+    
     FILE *file = fopen(filename, "rb");
     if (file == NULL) {
         perror("Eroare la deschiderea fisierului");
         return;
     }
+    
     fseek(file, 0, SEEK_END);
     long fileSize = ftell(file);
     fseek(file, 0, SEEK_SET);
 
-    send(clientSock, name, strlen(filename) + 1, 0);
+    int x = strlen(filename);
+    send(clientSock, &x, sizeof(x), 0);//trimit dimensiune nume
+    send(clientSock, name, strlen(filename), 0);//trimit nume
+    send(clientSock, &fileSize, sizeof(size_t), 0);//trimit dimensiune fisier
 
-    send(clientSock, &fileSize, sizeof(size_t), 0);
-
-    char buffer[BUFSIZE];
-    size_t bytesRead;
+    char buffer[BUFFSIZE];
+    size_t bytesRead;//trimit date fisier
     while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) > 0) {
         send(clientSock, buffer, bytesRead, 0);
     }
 
     fclose(file);
+
     printf("Fisierul '%s' a fost trimis cu succes.\n", filename);
     asteptare();
-} 
+}
 
 void getProcessesList(int clnt_sock) {
     send(clnt_sock, "2", 1, 0); // trimit 2 ca e a doua opțiune din meniu pt client
@@ -213,16 +182,16 @@ void ExecuteCommand(int clnt_sock) {
     //Aici client-ul trebuie sa astepte 2 trimiteri consecutive adica cand citeste optiunea 1/2/3/4 si dupa mai asteapta comanda de la admin
     send(clnt_sock, "3", 1, 0);//trimit 3 ca e a doua optiune din meniu pt client
     printf("Introduceti comanda de executat: ");
-    char command[BUFSIZE];
+    char command[BUFFSIZE];
     int c;
     fgets(command, sizeof(command), stdin);
-    send(clnt_sock, command, BUFSIZE, 0);
+    send(clnt_sock, command, BUFFSIZE, 0);
     printf("Se asteapta executia comenzii ...\n");
-    char result[BUFSIZE];
-    size_t hostnameLength;
-    recv(clnt_sock, &hostnameLength, sizeof(hostnameLength), 0);
-    ssize_t bytesRead = recv(clnt_sock, result, hostnameLength, 0);
-    result[hostnameLength+1] = '\0';
+    char result[BUFFSIZE];
+    size_t lenght;
+    recv(clnt_sock, &lenght, sizeof(lenght), 0);
+    ssize_t bytesRead = recv(clnt_sock, result, lenght, 0);
+    result[bytesRead+1] = '\0';
     printf("\n%s\n", result);
     asteptare();
 }
@@ -358,7 +327,8 @@ void* admin_menu_thread(void* arg) {
                 print_menu();
                 option = getc(stdin);
                 printf("\n\n");
-                switch (option)
+                int i = option - '0';
+                switch (i)
                 {
                     case getHostname:
                         clt_sck = alegeLista();
@@ -381,7 +351,7 @@ void* admin_menu_thread(void* arg) {
                         rebootPC(clt_sck);
                         break;
 
-                    case kickClient:
+                    case kick:
                         clt_sck = alegeLista();
                         send(clt_sck, "5", 1, 0);
                         pthread_cond_signal(&condition_var);
@@ -409,23 +379,23 @@ void* admin_menu_thread(void* arg) {
                         }
                         asteptare();
                         break;
-                    case getFile:
-                        char buffer[BUFSIZE];
-                        printf("Da calea fisierului:");
+                    case getFile://iau fisier de pe client pe server
+                        char buffer[BUFFSIZE];
+                        printf("Introdu calea fișierului din cadru clientului: ");
                         scanf("%s",buffer);
-                        char buffer1[BUFSIZE];
-                        printf("Da numele fisierului:");
+                        char buffer1[BUFFSIZE];
+                        printf("pune un nume fisierului de copiat: ");
                         scanf("%s",buffer1);
                         clt_sck = alegeLista();
-                        sendFilenameAndFile(clt_sck, buffer, buffer1);
+                        receiveFile(clt_sck, buffer, buffer1);
                         break;
 
-                    case sendfile:
-                        char buff[BUFSIZE];
-                        printf("Da calea fisierului:");
+                    case sendfile://trimit fisier de pe server la client
+                        char buff[BUFFSIZE];
+                        printf("Care e calea completa a fisierului? : ");
                         scanf("%s",buffer);
-                        char buff1[BUFSIZE];
-                        printf("Da numele fisierului:");
+                        char buff1[BUFFSIZE];
+                        printf("pune un nume fisierului copiat : ");
                         scanf("%s",buffer1);
                         clt_sck = alegeLista();
                         sendFile(clt_sck,buffer,buffer1);

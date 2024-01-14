@@ -3,6 +3,7 @@
         "unistd.h": "c",
         "dirent.h": "c",
         "stdio.h": "c",
-        "semaphore.h": "c"
+        "semaphore.h": "c",
+        "typeinfo": "c"
     }
 }

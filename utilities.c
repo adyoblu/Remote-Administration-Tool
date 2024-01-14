@@ -9,9 +9,18 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <fcntl.h>
-
+#include <pthread.h>
+#include <sys/stat.h>
+#include <signal.h>
+#include <netinet/in.h>
+#include <sys/wait.h>
 #define BUFFSIZE 4096
 #define MAX_BUFFER_SIZE 1024
+#define exitServer 0
+#define afisareClienti 6
+#define whitelistBlacklist 7
+#define whitelist '1'
+#define blacklist '2'
 #define getHostname 1
 #define getProcesses 2
 #define executeCommand 3
@@ -19,7 +28,8 @@
 #define kick 5
 #define sendfile 8
 #define getFile 9
-
+#define SOCKETERROR (-1)
+#define THREAD_POOL_SIZE 10
 
 double getMEMusage(pid_t pid, char* buffer, long int rss){
     char path[128];

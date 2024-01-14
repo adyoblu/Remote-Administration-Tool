@@ -1,37 +1,5 @@
 #include "utilities.c"
 
-void sendFile(int sock, const char *filename) {
-    FILE *file = fopen(filename, "rb");
-    if (file == NULL) {
-        perror("Eroare la deschiderea fisierului");
-        return;
-    }
-    fseek(file, 0, SEEK_END);
-    long fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    send(sock, &fileSize, sizeof(size_t), 0);
-
-    char buffer[BUFFSIZE];
-    size_t bytesRead;
-    while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) > 0) {
-        send(sock, buffer, bytesRead, 0);
-    }
-
-    fclose(file);
-} 
-
-void selectFile(int sock)
-{
-    char filename[BUFFSIZE];
-    ssize_t bytesRead = recv(sock, filename, sizeof(filename), 0);
-    if (bytesRead <= 0) {
-        perror("Eroare la primirea numelui fișierului");
-        return;
-    }
-    sendFile(sock, filename);
-}
-
 void sendMessage(int sock)
 {
     char message[BUFFSIZE];
@@ -236,49 +204,79 @@ void restartClient(int sock) {
 }
 
 void receiveFile(int sock) {
-    //numele fisierului
-    char filename[BUFFSIZE];
-    ssize_t bytesRead = recv(sock, filename, sizeof(filename), 0);
-    if (bytesRead <= 0) {
-        perror("Eroare la primirea numelui fisierului");
-        return;
-    }
+    int filenameSize;
+    recv(sock, &filenameSize, sizeof(filenameSize), 0);
 
-    //dimensiunea fisierului
+    char filename[BUFFSIZE];
+    ssize_t nameLength = recv(sock, filename, filenameSize, 0);
+    filename[nameLength] = '\0'; // Ensure null-terminated string
+    fprintf(stderr, "filename: %s\n", filename);
+
     size_t fileSize;
     recv(sock, &fileSize, sizeof(size_t), 0);
 
-    //scriere in fisier
-    FILE *file = fopen(filename, "wb");
-    if (file == NULL) {
-        perror("Eroare la deschiderea fisierului pentru scriere");
+    int file = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0666); // Change flags as needed
+    if (file == -1) {
+        perror("Error opening file for writing");
         return;
     }
 
-    //scriere continut in fisier
     char buffer[BUFFSIZE];
-    size_t totalBytesReceived = 0;
+    ssize_t bytesReceived;
 
-    while (totalBytesReceived < fileSize) {
-        bytesRead = recv(sock, buffer, sizeof(buffer), 0);
-        if (bytesRead <= 0) {
-            perror("Eroare la primirea datelor fisierului");
-            fclose(file);
+    while ((bytesReceived = recv(sock, buffer, sizeof(buffer), 0)) > 0) {
+        ssize_t bytesWritten = write(file, buffer, bytesReceived);
+        if (bytesWritten == -1) {
+            fprintf(stderr, "Error writing to file");
+            close(file);
             return;
         }
-
-        fwrite(buffer, 1, bytesRead, file);
-        totalBytesReceived += bytesRead;
     }
 
-    fclose(file);
-    printf("Fisierul '%s' a fost primit si salvat cu succes.\n", filename);
+    if (bytesReceived == -1) {
+        fprintf(stderr, "Error receiving file content");
+    }
+
+    close(file);
+    printf("File '%s' received successfully.\n", filename);
+}
+
+void sendFile(int clientSock) {
+    int length;
+    char filename[BUFFSIZE];
+    ssize_t bytesRead;
+    
+    recv(clientSock, &length, sizeof(length), 0);
+    recv(clientSock, filename, length, 0);
+    filename[length] = '\0';
+    fprintf(stderr, "%s\n", filename);
+
+    off_t fileSize = 0;
+    char buffer[BUFFSIZE];
+
+    int file = open(filename, O_RDONLY);
+    if (file == -1) {
+        fprintf(stderr, "Error opening file for reading");
+        send(clientSock, &fileSize, sizeof(off_t), 0);
+        send(clientSock, buffer, 0, 0); // Sending an empty buffer
+    } else {
+        fileSize = lseek(file, 0, SEEK_END);
+        lseek(file, 0, SEEK_SET);
+        send(clientSock, &fileSize, sizeof(off_t), 0);
+    
+        while ((bytesRead = read(file, buffer, sizeof(buffer))) > 0) {
+            send(clientSock, buffer, bytesRead, 0);
+        }
+
+        close(file);
+        printf("File '%s' sent successfully.", filename);
+    }
 }
 
 void handleServerActions(int sock) {
     int timeout = 10;
     while (1) {
-        char response[BUFFSIZE];
+        char response[1];
         recv(sock, response, sizeof(response), 0);
         printf("\n%s\n", response);
         int responseType = atoi(response);
@@ -299,11 +297,11 @@ void handleServerActions(int sock) {
                 fprintf(stderr, "S-a terminat executia clientului.");
                 exit(0);
                 break;
-            case sendfile:
-                selectFile(sock);
-                break;
-            case getFile:
+            case sendfile://sendfile primeste de la server
                 receiveFile(sock);
+                break;
+            case getFile://getFile trimite la server
+                sendFile(sock);
                 break;
         }
         timeout--;
