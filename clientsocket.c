@@ -224,7 +224,7 @@ void receiveFile(int sock) {
     char buffer[BUFFSIZE];
     ssize_t bytesReceived;
 
-    while ((bytesReceived = recv(sock, buffer, sizeof(buffer), 0)) > 0) {
+    if ((bytesReceived = recv(sock, buffer, sizeof(buffer), 0)) > 0) {
         ssize_t bytesWritten = write(file, buffer, bytesReceived);
         if (bytesWritten == -1) {
             fprintf(stderr, "Error writing to file");
@@ -264,7 +264,7 @@ void sendFile(int clientSock) {
         lseek(file, 0, SEEK_SET);
         send(clientSock, &fileSize, sizeof(off_t), 0);
     
-        while ((bytesRead = read(file, buffer, sizeof(buffer))) > 0) {
+        if ((bytesRead = read(file, buffer, fileSize)) > 0) {
             send(clientSock, buffer, bytesRead, 0);
         }
 

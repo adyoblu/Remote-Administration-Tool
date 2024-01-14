@@ -17,22 +17,28 @@ pthread_t thread_pool[THREAD_POOL_SIZE];
 pthread_t admin_menu_thread_id;
 pthread_cond_t condition_var = PTHREAD_COND_INITIALIZER;
 
-int verify_blacklist(const char *ip){
+int verify_blacklist(const char *ip) {
     int ok = 0;
-    FILE *file = fopen("blacklist", "r");
-    if (file != NULL) {
+    int file = open("blacklist", O_RDONLY);
+    
+    if (file != -1) {
         char line[256];
-        while (fgets(line, sizeof(line), file) != NULL) {
-            line[strcspn(line, "\n")] = '\0';
+        ssize_t bytesRead;
+        
+        while ((bytesRead = read(file, line, sizeof(line)-1)) > 0) {
+            line[bytesRead] = '\0';
             if (strcmp(line, ip) == 0) {
                 ok = 1;
                 break;
             }
         }
-        fclose(file);
+        
+        close(file);
     }
+    
     return ok;
 }
+
 
 void print_menu()
 {   
@@ -105,7 +111,7 @@ void receiveFile(int clientSock, const char *filename,const char* name) {
     char buffer[BUFFSIZE];
     ssize_t bytesReceived;
 
-    while ((bytesReceived = recv(clientSock, buffer, sizeof(buffer), 0)) > 0) {
+    if ((bytesReceived = recv(clientSock, buffer, sizeof(buffer), 0)) > 0) {
         ssize_t bytesWritten = write(file, buffer, bytesReceived);
         if (bytesWritten == -1) {
             fprintf(stderr, "Error writing to file");
@@ -123,34 +129,38 @@ void receiveFile(int clientSock, const char *filename,const char* name) {
     asteptare();
 }
 
-void sendFile(int clientSock, const char *filename, const char *name) {//trimit fisier de pe server la client
+void sendFile(int clientSock, const char *filename, const char *name) {
     if (send(clientSock, "8", 1, 0) == -1) {
         fprintf(stderr, "Eroare la trimiterea optiunii 8");
         return;
     }
-    
-    FILE *file = fopen(filename, "rb");
-    if (file == NULL) {
+
+    int file = open(filename, O_RDONLY);
+    if (file == -1) {
         perror("Eroare la deschiderea fisierului");
         return;
     }
-    
-    fseek(file, 0, SEEK_END);
-    long fileSize = ftell(file);
-    fseek(file, 0, SEEK_SET);
 
-    int x = strlen(filename);
-    send(clientSock, &x, sizeof(x), 0);//trimit dimensiune nume
-    send(clientSock, name, strlen(filename), 0);//trimit nume
-    send(clientSock, &fileSize, sizeof(size_t), 0);//trimit dimensiune fisier
+    off_t fileSize = lseek(file, 0, SEEK_END);
+    lseek(file, 0, SEEK_SET);
+
+    int nameLength = strlen(name);
+    send(clientSock, &nameLength, sizeof(nameLength), 0);
+    send(clientSock, name, nameLength, 0);
+    send(clientSock, &fileSize, sizeof(off_t), 0);
 
     char buffer[BUFFSIZE];
-    size_t bytesRead;//trimit date fisier
-    while ((bytesRead = fread(buffer, 1, sizeof(buffer), file)) > 0) {
-        send(clientSock, buffer, bytesRead, 0);
+    ssize_t bytesRead;
+
+    if ((bytesRead = read(file, buffer, sizeof(buffer))) > 0) {
+        if (send(clientSock, buffer, bytesRead, 0) == -1) {
+            perror("Eroare la trimiterea datelor fisierului");
+            close(file);
+            return;
+        }
     }
 
-    fclose(file);
+    close(file);
 
     printf("Fisierul '%s' a fost trimis cu succes.\n", filename);
     asteptare();
@@ -210,42 +220,60 @@ int rebootPC(int clnt_sock) {
     return 0;
 }
 
-void Whitelist(){
+void Whitelist() {
     // Afiseaza lista de IP-uri din blacklist
     printf("Lista de IP-uri din blacklist:\n");
-    FILE* file = fopen("blacklist", "r");
-    fseek(file, 0, SEEK_END);
+    
+    int file = open("blacklist", O_RDONLY);
+    lseek(file, 0, SEEK_END);
 
-    if (ftell(file) == 0) {
+    if (lseek(file, 0, SEEK_CUR) == 0) {
         fprintf(stderr, "Fisierul este gol\n");
-        fclose(file);
+        close(file);
         return;
     }
-    fseek(file, 0, SEEK_SET);
-    if (file != NULL) {
-        char ip[INET_ADDRSTRLEN];
-        while (fscanf(file, "%s", ip) != EOF)
-            printf("%s\n", ip);
-        fclose(file);
+    
+    lseek(file, 0, SEEK_SET);
+
+    char ip[INET_ADDRSTRLEN];
+    char buffer[BUFFSIZE];
+    ssize_t bytesRead;
+
+    while ((bytesRead = read(file, buffer, sizeof(buffer))) > 0) {
+        printf("%.*s", (int)bytesRead, buffer);
     }
+
+    close(file);
+
     // Ia input de la administrator pentru IP-ul sters
     printf("\nIntroduceti IP-ul pentru whitelist: ");
     char removeIP[INET_ADDRSTRLEN];
     scanf("%s", removeIP);
 
-    FILE* blacklist_file = fopen("blacklist", "r");
-    FILE* temp_file = fopen("temp_blacklist", "w+");
+    int blacklist_file = open("blacklist", O_RDONLY);
+    int temp_file = open("temp_blacklist", O_WRONLY | O_CREAT | O_TRUNC, 0666);
 
-    if (blacklist_file != NULL && temp_file != NULL) {
+    if (blacklist_file != -1 && temp_file != -1) {
         char ip[INET_ADDRSTRLEN];
-        while (fscanf(blacklist_file, "%s", ip) != EOF) {
-            if (strcmp(ip, removeIP) != 0) {
-                fprintf(temp_file, "%s\n", ip);
+        char buffer[BUFFSIZE];
+        ssize_t bytesRead;
+
+        while ((bytesRead = read(blacklist_file, buffer, sizeof(buffer))) > 0) {
+            char *pos = buffer;
+            char *end = buffer + bytesRead;
+
+            while (pos < end) {
+                sscanf(pos, "%s", ip);
+                pos += strlen(ip) + 1;
+
+                if (strcmp(ip, removeIP) != 0) {
+                    dprintf(temp_file, "%s\n", ip);
+                }
             }
         }
 
-        fclose(blacklist_file);
-        fclose(temp_file);
+        close(blacklist_file);
+        close(temp_file);
 
         // sterge vechea lista de blacklist si redenumește temp_blacklist
         remove("blacklist");
@@ -269,10 +297,10 @@ void *thread_func(void *arg) {
 	}
 }
 
-void Blacklist(int clt_sck){
+void Blacklist(int clt_sck) {
     printf("ATENTIE: Sigur doriti să adaugati IP-ul în blacklist? (y/n): ");
     char confirmation;
-    SA_IN peer_addr;
+    struct sockaddr_in peer_addr;
     socklen_t peer_len = sizeof(peer_addr);
     getpeername(clt_sck, (struct sockaddr*)&peer_addr, &peer_len);
     char ip[INET_ADDRSTRLEN];
@@ -283,12 +311,13 @@ void Blacklist(int clt_sck){
         printf("Optiune invalida. IP-ul NU a fost adaugat în blacklist.\n");
     } else {
         if (confirmation == 'y' || confirmation == 'Y') {
-            FILE *file = fopen("blacklist", "r");
+            int file = open("blacklist", O_RDONLY);
             int ipAlreadyExists = 0;
-            if (file != NULL) {
+            if (file != -1) {
                 char line[256];
-                while (fgets(line, sizeof(line), file) != NULL) {
-                    line[strcspn(line, "\n")] = '\0';
+                ssize_t bytesRead;
+                while ((bytesRead = read(file, line, sizeof(line))) > 0) {
+                    line[bytesRead] = '\0';
                     if (strcmp(line, ip) == 0) {
                         ipAlreadyExists = 1;
                         printf("IP-ul exista deja in blacklist.\n");
@@ -296,19 +325,19 @@ void Blacklist(int clt_sck){
                         break;
                     }
                 }
-                fclose(file);
+                close(file);
             }
-            file = fopen("blacklist", "a");
+            file = open("blacklist", O_WRONLY | O_CREAT | O_APPEND, 0666);
 
             if (!ipAlreadyExists) {
-                if (file != NULL) {
-                    fprintf(file, "%s\n", ip);
+                if (file != -1) {
+                    dprintf(file, "%s\n", ip);
                     printf("IP-ul a fost adaugat in blacklist.\n");
                 } else {
                     perror("Eroare la deschiderea fisierului pentru scriere");
                 }
             }
-            fclose(file);
+            close(file);
         } else {
             printf("IP-ul NU a fost adaugat în blacklist.\n");
         }
