@@ -3,8 +3,6 @@
 /*
 trb date comenzi cu sudo
 pt mkdir sau alte comenzi se blocheaza execute command
-open in loc de FILE*
-organizare functii in mai multe fisiere
 */
 
 

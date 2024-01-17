@@ -39,9 +39,8 @@ void sendProcessesList(int sock) {
         return;
     }
 
-    char buffer[BUFFSIZE];
-    int len = snprintf(buffer, 59, "USER\t\tPID\t%%CPU\t%%MEM\tVSZ\tRSS\tTTY\tSTAT\tSTART\tTIME\tCOMMAND\n");
-    write(outputFile, buffer, len);
+    char buffer[BUFFSIZE] = "USER\t\tPID\t%CPU\t%MEM\tVSZ\t\tRSS\t\tTTY\tSTAT\tSTART\tTIME\tCOMMAND\n";
+    write(outputFile, buffer, strlen(buffer));
     
     struct dirent *entry;
     while ((entry = readdir(procDir)) != NULL) {
@@ -66,11 +65,13 @@ void sendProcessesList(int sock) {
             write(outputFile, "\t", 1);
 
             int utime, stime, pid;
-            unsigned long starttime;
+            unsigned long starttime, vsz;
             long int rss;
-            sscanf(buffer, "%d %*s %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %d %d %*d %*d %*d %*d %*d %*d %lu %*d",
-            &pid, &utime, &stime, &starttime);
-
+            int tty;
+            char state;
+            sscanf(buffer, "%d %*s %c %*d %*d %*d %d %*d %*u %*u %*u %*u %*u %d %d %*d %*d %*d %*d %*d %*d %lu %lu %ld",
+            &pid, &state, &tty, &utime, &stime, &starttime, &vsz, &rss);
+            
             double cpu_usage = getCPUusage(utime, stime, starttime);
             char cpuUsageStr[20];
             snprintf(cpuUsageStr, sizeof(cpuUsageStr), "%.2f", cpu_usage);
@@ -83,19 +84,68 @@ void sendProcessesList(int sock) {
             write(outputFile, memUsage, strlen(memUsage));//%MEM
             
             write(outputFile, "\t", 1);
-            //printf("PID %d, mem: %.2f%%\n", pid, mem_usage);
-            
 
-            // COMMAND: Read the command from /proc/<pid>/cmdline
-            // snprintf(procPath, sizeof(procPath), "/proc/%s/cmdline", entry->d_name);
-            // procFile = open(procPath, O_RDONLY);
-            // if (procFile != -1) {
-            //     bytesRead = read(procFile, buffer, sizeof(buffer));
-            //     write(outputFile, &bytesRead, sizeof(bytesRead));
-            //     close(procFile);
-            // } else {
-            //     perror("Error opening cmdline file");
-            // }
+            vsz /= 1024;
+            char vszStr[20];
+            snprintf(vszStr, sizeof(vszStr), "%lu", vsz);
+            write(outputFile, vszStr, strlen(vszStr)); // VSZ
+
+            write(outputFile, "\t\t", 2);
+
+            rss *= getpagesize() / 1024;
+
+            char rssStr[20];
+            snprintf(rssStr, sizeof(rssStr), "%ld", rss);
+            write(outputFile, rssStr, strlen(rssStr)); // RSS
+
+            write(outputFile, "\t\t", 2);
+            
+            char tty_str[16];
+
+            convert_tty(tty, tty_str);// TTY
+            write(outputFile, tty_str, strlen(tty_str));
+
+            write(outputFile, "\t", 1);
+
+            char status[16];
+            snprintf(status, sizeof(status), "%c", state);
+            write(outputFile, status, strlen(status));//state
+ 
+            write(outputFile, "\t", 1);
+
+            char times[20];
+            struct sysinfo info;
+            sysinfo(&info);
+            double seconds = info.uptime - ((double)starttime / sysconf(_SC_CLK_TCK));
+
+            int hours = seconds / 3600;
+            int minutes = (seconds - hours * 3600) / 60;
+
+            snprintf(times, sizeof(times), "%02d:%02d", hours, minutes);
+    
+            write(outputFile, times, strlen(times));// STARTTIME
+            write(outputFile, "\t", 1);
+            char star[20];
+            int total_seconds = (int)(utime + stime) / sysconf(_SC_CLK_TCK);
+
+            int min = total_seconds / 60;
+            int sec = total_seconds % 60;
+
+            snprintf(star, sizeof(star), "%i:%i", min, sec);
+
+            write(outputFile, star, strlen(star));// TIME
+
+
+            write(outputFile, "\t", 1);
+            
+            char poe[50];
+            snprintf(poe, sizeof(poe), "/proc/%d/cmdline", pid);
+            int sd = open(procPath, O_RDONLY);
+            char sta[20];
+            ssize_t byts = read(sd, sta, 20);
+            close(sd);
+            sta[byts] = '\0';
+            write(outputFile, sta, strlen(sta));// command
             write(outputFile, "\n", 1);
         }
     }

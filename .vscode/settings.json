@@ -4,6 +4,11 @@
         "dirent.h": "c",
         "stdio.h": "c",
         "semaphore.h": "c",
-        "typeinfo": "c"
+        "typeinfo": "c",
+        "functional": "c",
+        "array": "c",
+        "string_view": "c",
+        "initializer_list": "c",
+        "utility": "c"
     }
 }

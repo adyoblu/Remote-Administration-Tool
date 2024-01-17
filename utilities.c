@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <sys/resource.h>
 #include <string.h>
 #include <sys/sysinfo.h>
 #include <stdlib.h>
@@ -30,6 +31,23 @@
 #define getFile 9
 #define SOCKETERROR (-1)
 #define THREAD_POOL_SIZE 10
+
+void convert_tty(int tty_nr, char tty_str[]) {
+    if (tty_nr == 0) {
+        snprintf(tty_str, 16, "?");
+    } else {
+        int major = (tty_nr >> 8) & 0xFF;
+        int minor = (tty_nr & 0xFF) | ((tty_nr >> 20) & 0xFFF00);
+
+        if (major == 136) { // TTY for pts
+            snprintf(tty_str, 16, "pts/%d", minor);
+        } else if (major == 4) { // TTY
+            snprintf(tty_str, 16, "tty%d", minor);
+        } else {
+            snprintf(tty_str, 16, "?");
+        }
+    }
+}
 
 double getMEMusage(pid_t pid, char* buffer, long int rss){
     char path[128];
