@@ -194,7 +194,7 @@ void ExecuteCommand(int clnt_sock) {
     size_t lenght;
     recv(clnt_sock, &lenght, sizeof(lenght), 0);
     ssize_t bytesRead = recv(clnt_sock, result, lenght, 0);
-    result[bytesRead+1] = '\0';
+    result[bytesRead] = '\0';
     printf("\n%s\n", result);
     asteptare();
 }

@@ -69,8 +69,9 @@ void sendProcessesList(int sock) {
             long int rss;
             int tty;
             char state;
-            sscanf(buffer, "%d %*s %c %*d %*d %*d %d %*d %*u %*u %*u %*u %*u %d %d %*d %*d %*d %*d %*d %*d %lu %lu %ld",
-            &pid, &state, &tty, &utime, &stime, &starttime, &vsz, &rss);
+            char comm[16];
+            sscanf(buffer, "%d %s %c %*d %*d %*d %d %*d %*u %*u %*u %*u %*u %d %d %*d %*d %*d %*d %*d %*d %lu %lu %ld",
+            &pid, comm, &state, &tty, &utime, &stime, &starttime, &vsz, &rss);
             
             double cpu_usage = getCPUusage(utime, stime, starttime);
             char cpuUsageStr[20];
@@ -137,15 +138,8 @@ void sendProcessesList(int sock) {
 
 
             write(outputFile, "\t", 1);
-            
-            char poe[50];
-            snprintf(poe, sizeof(poe), "/proc/%d/cmdline", pid);
-            int sd = open(procPath, O_RDONLY);
-            char sta[20];
-            ssize_t byts = read(sd, sta, 20);
-            close(sd);
-            sta[byts] = '\0';
-            write(outputFile, sta, strlen(sta));// command
+        
+            write(outputFile, comm, strlen(comm));// command
             write(outputFile, "\n", 1);
         }
     }
@@ -197,7 +191,8 @@ void ExecuteCommand(int sock)
     if (strcmp(command, "exit") == 0) //va iesi
         exit(0);
 
-    int pipefd[2], length;
+    int pipefd[2];
+    size_t length;
     char *args[100];
     if(pipe(pipefd)){
         fprintf(stderr, "Failed to create pipe");
@@ -239,12 +234,9 @@ void ExecuteCommand(int sock)
             fflush(NULL);
             memset(path,0,BUFFSIZE);
         }else {
-            length = strlen("succes");
+            length = strlen("success");
             send(sock, &length, sizeof(length), 0);
-            if (send(sock, "succes", length, 0) != length) {
-                fprintf(stderr, "Failed to send success message");
-                exit(1);
-            }
+            send(sock, "success", length, 0);
         }
         close(pipefd[0]);
     } else {
@@ -254,10 +246,21 @@ void ExecuteCommand(int sock)
 }
 
 void restartClient(int sock) {
-    int result = system("reboot");
-    send(sock, &result, sizeof(result), 0);
-    if (result == -1){
-        perror("Eroare la executarea comenzii de restart");
+    pid_t childPid = fork();
+
+    if (childPid == -1) {
+        fprintf(stderr, "Error forking process");
+        exit(EXIT_FAILURE);
+    }
+
+    if (childPid == 0) {
+        execl("/sbin/reboot", "reboot", (char *)NULL);
+        fprintf(stderr, "Error executing reboot command");
+        exit(EXIT_FAILURE);
+    } else {
+        int status;
+        waitpid(childPid, &status, 0);
+        send(sock, &status, sizeof(status), 0);
     }
 }
 
@@ -351,7 +354,7 @@ void handleServerActions(int sock) {
                 restartClient(sock);
                 break;
             case kick:
-                fprintf(stderr, "S-a terminat executia clientului.");
+                fprintf(stderr, "S-a terminat executia clientului.\n");
                 exit(0);
                 break;
             case sendfile://sendfile primeste de la server
