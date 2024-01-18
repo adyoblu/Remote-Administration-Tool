@@ -229,7 +229,8 @@ void ExecuteCommand(int sock)
     {
         close(pipefd[1]);
         memset(path, 0, BUFFSIZE);
-        if((length = read(pipefd[0], path, BUFFSIZE-1)) >= 0){
+        
+        if((length = read(pipefd[0], path, BUFFSIZE-1)) > 0){
             send(sock, &length, sizeof(length), 0);
             if(send(sock, path, strlen(path), 0) != strlen(path)){
                 fprintf(stderr,"Failed");
@@ -237,6 +238,13 @@ void ExecuteCommand(int sock)
             }
             fflush(NULL);
             memset(path,0,BUFFSIZE);
+        }else {
+            length = strlen("succes");
+            send(sock, &length, sizeof(length), 0);
+            if (send(sock, "succes", length, 0) != length) {
+                fprintf(stderr, "Failed to send success message");
+                exit(1);
+            }
         }
         close(pipefd[0]);
     } else {
