@@ -111,7 +111,7 @@ make
   </details>
 </details>
 <details>
-  <summary><h2>8)Ia fisier de la client</h2></summary><br>
+  <summary><h2>8)Ia fisier de la client</h2></summary>
   <img src="https://github.com/adyoblu/Remote-Administration-Tool/assets/44545077/7ca4b6ed-1d5f-418d-b7eb-27e5aeccaa78" alt="primesc"><br>
   <img src="https://github.com/adyoblu/Remote-Administration-Tool/assets/44545077/3e96ec5c-df9d-4538-935d-413d6560aefd" alt="fisier">
 </details>
