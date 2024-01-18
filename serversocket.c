@@ -1,10 +1,5 @@
 #include "utilities.c"
 #include "myqueue.h"
-/*
-trb date comenzi cu sudo
-pt mkdir sau alte comenzi se blocheaza execute command
-*/
-
 
 typedef struct sockaddr_in SA_IN;
 typedef struct sockaddr SA;
