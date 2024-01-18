@@ -19,7 +19,7 @@ int verify_blacklist(const char *ip) {
         ssize_t bytesRead;
         
         while ((bytesRead = read(file, line, sizeof(line)-1)) > 0) {
-            line[bytesRead] = '\0';
+            line[bytesRead-1] = '\0';
             if (strcmp(line, ip) == 0) {
                 ok = 1;
                 break;

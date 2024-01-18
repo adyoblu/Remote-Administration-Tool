@@ -336,7 +336,6 @@ void handleServerActions(int sock) {
     while (1) {
         char response[1];
         recv(sock, response, sizeof(response), 0);
-        printf("\n%s\n", response);
         int responseType = atoi(response);
         switch (responseType) {
             case getHostname:
@@ -378,11 +377,11 @@ int main(int argc, char *argv[]) {
     serv_addr.sin_port = htons(5566); 
     if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) == -1)
     {
-        perror("Eroare la conectare");
+        fprintf(stderr, "Eroare la conectare");
         exit(EXIT_FAILURE);
+    }else {
+        handleServerActions(sock);
+        close(sock);
     }
-    
-    handleServerActions(sock);
-    close(sock);
     return 0;
 }
