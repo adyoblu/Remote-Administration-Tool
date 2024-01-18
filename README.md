@@ -8,9 +8,13 @@
 
 # Continut
 
+- [Diagrama Block](#diagrama-block)
 - [Instalare](#instalare)
 - [Inainte de utilizare](#inainte-de-utilizare)
 - [Utilizare](#utilizare)
+
+# Diagrama Block
+![block](https://github.com/adyoblu/Remote-Administration-Tool/assets/44545077/55d824fb-8092-4cf1-a597-b0ffcf7e7bd6)
 # Instalare
 
 Alegem un folder de pe linux, apoi deschidem un terminal si introducem comanda
